@@ -1,0 +1,27 @@
+*.iml
+.gradle
+/.idea
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+
+# Build output. Unanchored so app/build is caught as well as the root one.
+build/
+.kotlin/
+
+# Machine-specific: points at this Mac's Android SDK.
+local.properties
+
+# Signing material. The keystore is the one file that can never be regenerated — lose it and
+# no future build can update an already-installed copy of the app — so it lives outside git
+# and needs its own backup.
+*.jks
+*.keystore
+keystore.properties
+
+# Firebase config. Not strictly a secret (it ships inside every APK), but there is no reason
+# to publish the project's API key in a public repo when the build already runs fine without
+# it. Re-fetch with:
+#   npx firebase-tools apps:sdkconfig ANDROID <appId> --project block-nine-game --out app/google-services.json
+app/google-services.json

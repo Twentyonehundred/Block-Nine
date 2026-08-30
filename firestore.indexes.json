@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayBest", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthBest", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
