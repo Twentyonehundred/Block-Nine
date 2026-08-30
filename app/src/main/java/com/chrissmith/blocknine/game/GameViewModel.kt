@@ -72,6 +72,13 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         return board.canPlace(piece, row, col)
     }
 
+    /** The cells a drop of tray piece [index] would clear. Empty unless the move both fits and scores. */
+    fun previewClears(index: Int, row: Int, col: Int): Set<Int> {
+        if (!canPlace(index, row, col)) return emptySet()
+        val piece = tray.getOrNull(index) ?: return emptySet()
+        return board.clearsFrom(piece, row, col)
+    }
+
     /** True if this piece has nowhere left to go, so the UI can grey it out. */
     fun isDead(piece: Piece): Boolean = !gameOver && !board.hasAnyPlacement(piece)
 

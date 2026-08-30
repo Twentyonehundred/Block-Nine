@@ -130,6 +130,13 @@ fun GameScreen(
     val ghostValid = dragging != null && target != null &&
         vm.canPlace(dragging.index, target.row, target.col)
 
+    // Rows, columns and boxes this drop would finish off, so the board can call it out.
+    val completing = if (ghostValid && dragging != null && target != null) {
+        vm.previewClears(dragging.index, target.row, target.col)
+    } else {
+        emptySet()
+    }
+
     // Only preview once the piece actually overlaps the grid.
     val ghostCells = if (
         dragging != null && target != null &&
@@ -170,6 +177,7 @@ fun GameScreen(
                 clearing = vm.clearing,
                 ghostCells = ghostCells,
                 ghostValid = ghostValid,
+                completing = completing,
                 colors = colors,
                 modifier = Modifier
                     .fillMaxWidth()

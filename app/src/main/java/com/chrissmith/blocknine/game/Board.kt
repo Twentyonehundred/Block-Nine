@@ -50,6 +50,38 @@ class Board private constructor(private val grid: List<Int>) {
     }
 
     /**
+     * The cells a drop of [piece] at ([row], [col]) would clear, without placing anything.
+     *
+     * Lets the drop preview show which rows, columns and boxes a move would complete. Kept
+     * separate from [place] rather than built on it because this runs on every pointer move
+     * of a drag, and there is no need to allocate two boards to answer it.
+     */
+    fun clearsFrom(piece: Piece, row: Int, col: Int): Set<Int> {
+        if (!canPlace(piece, row, col)) return emptySet()
+
+        val added = piece.cells.mapTo(HashSet()) { (row + it.row) * SIZE + (col + it.col) }
+        fun filledAfter(r: Int, c: Int) = isFilled(r, c) || (r * SIZE + c) in added
+
+        return buildSet {
+            for (r in 0 until SIZE) {
+                if ((0 until SIZE).all { filledAfter(r, it) }) {
+                    for (c in 0 until SIZE) add(r * SIZE + c)
+                }
+            }
+            for (c in 0 until SIZE) {
+                if ((0 until SIZE).all { filledAfter(it, c) }) {
+                    for (r in 0 until SIZE) add(r * SIZE + c)
+                }
+            }
+            for (b in 0 until SIZE) {
+                if (boxCells(b).all { (r, c) -> filledAfter(r, c) }) {
+                    boxCells(b).forEach { (r, c) -> add(r * SIZE + c) }
+                }
+            }
+        }
+    }
+
+    /**
      * Drops [piece] at ([row], [col]) and resolves any completed rows, columns and boxes.
      *
      * All completions are detected against the same post-placement board and cleared

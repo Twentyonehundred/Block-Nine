@@ -161,6 +161,67 @@ class BoardTest {
     }
 
     @Test
+    fun `the drop preview reports the cells a move would clear`() {
+        val board = Board.of(
+            "########.",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+        )
+
+        val preview = board.clearsFrom(dot, 0, 8)
+
+        assertEquals((0 until Board.SIZE).map { it }.toSet(), preview)
+        // Nothing was actually placed.
+        assertFalse(board.isFilled(0, 8))
+    }
+
+    @Test
+    fun `the drop preview covers every unit a single move completes`() {
+        val board = Board.of(
+            "###......",
+            "###......",
+            "##.######",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+        )
+
+        val preview = board.clearsFrom(dot, 2, 2)
+
+        // Row 2 plus box 0, overlapping in three cells — the same 15 that place() clears.
+        assertEquals(board.place(dot, 2, 2).clearedCells, preview)
+        assertEquals(15, preview.size)
+    }
+
+    @Test
+    fun `the drop preview is empty for a move that scores nothing or cannot be made`() {
+        val board = Board.of(
+            "#........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+        )
+
+        assertTrue("fits but completes nothing", board.clearsFrom(dot, 4, 4).isEmpty())
+        assertTrue("overlaps an occupied cell", board.clearsFrom(dot, 0, 0).isEmpty())
+        assertTrue("off the board", board.clearsFrom(shape("h5"), 0, 5).isEmpty())
+    }
+
+    @Test
     fun `a 2x3 piece needs two clear rows`() {
         // Striped: no two adjacent rows are ever both open, so nothing two cells tall fits,
         // however much horizontal room is left.

@@ -61,6 +61,9 @@ fun DrawScope.drawTile(
 /**
  * The 9x9 grid: alternating box shading, hairline cell lines, heavy box borders, the
  * placed tiles, the drop preview, and the flash-and-shrink animation for cleared cells.
+ *
+ * [completing] holds the cells the pending drop would clear, highlighted so the player can
+ * see a scoring move coming rather than discovering it after the fact.
  */
 @Composable
 fun BoardCanvas(
@@ -68,6 +71,7 @@ fun BoardCanvas(
     clearing: Set<Int>,
     ghostCells: List<Cell>?,
     ghostValid: Boolean,
+    completing: Set<Int>,
     colors: BoardColors,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +102,16 @@ fun BoardCanvas(
                 color = if (shaded) colors.boxShaded else colors.boxPlain,
                 topLeft = Offset(boxCol * Board.BOX * cell, boxRow * Board.BOX * cell),
                 size = Size(Board.BOX * cell, Board.BOX * cell),
+            )
+        }
+
+        // A wash over everything the pending drop would clear, sitting under the grid lines so
+        // the board still reads as a board.
+        for (index in completing) {
+            drawRect(
+                color = colors.complete.copy(alpha = 0.18f),
+                topLeft = Offset((index % Board.SIZE) * cell, (index / Board.SIZE) * cell),
+                size = Size(cell, cell),
             )
         }
 
@@ -147,6 +161,39 @@ fun BoardCanvas(
                     alpha = 1f - progress,
                     shrink = progress * 0.45f,
                 )
+            }
+        }
+
+        // Outline around the completing region, on top of the tiles — the wash alone is
+        // invisible under a nearly full row, which is exactly when it matters most.
+        if (completing.isNotEmpty()) {
+            val edge = (cell * 0.06f).coerceAtLeast(2f)
+            // Sides that lie on the board's own border would be half-clipped, so nudge them in.
+            fun clampX(v: Float) = v.coerceIn(edge / 2f, size.width - edge / 2f)
+            fun clampY(v: Float) = v.coerceIn(edge / 2f, size.height - edge / 2f)
+            fun outside(r: Int, c: Int) = r !in 0 until Board.SIZE || c !in 0 until Board.SIZE ||
+                (r * Board.SIZE + c) !in completing
+
+            for (index in completing) {
+                val row = index / Board.SIZE
+                val col = index % Board.SIZE
+                val left = clampX(col * cell)
+                val right = clampX((col + 1) * cell)
+                val top = clampY(row * cell)
+                val bottom = clampY((row + 1) * cell)
+
+                if (outside(row - 1, col)) {
+                    drawLine(colors.complete, Offset(left, top), Offset(right, top), edge)
+                }
+                if (outside(row + 1, col)) {
+                    drawLine(colors.complete, Offset(left, bottom), Offset(right, bottom), edge)
+                }
+                if (outside(row, col - 1)) {
+                    drawLine(colors.complete, Offset(left, top), Offset(left, bottom), edge)
+                }
+                if (outside(row, col + 1)) {
+                    drawLine(colors.complete, Offset(right, top), Offset(right, bottom), edge)
+                }
             }
         }
     }
