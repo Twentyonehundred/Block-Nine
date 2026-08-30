@@ -28,8 +28,11 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     var score by mutableIntStateOf(0)
         private set
 
-    var best by mutableIntStateOf(prefs.getInt(KEY_BEST, 0))
-        private set
+    /** This device's records for today, this month and all time. */
+    val bests = PersonalBests(prefs)
+
+    /** Shorthand for the all-time record, which the header and the game-over card both show. */
+    val best: Int get() = bests.allTime
 
     /** Consecutive turns that cleared something. Resets on a turn that clears nothing. */
     var streak by mutableIntStateOf(0)
@@ -52,6 +55,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun newGame() {
+        bests.refresh()
         board = Board.empty()
         tray = Pieces.dealTray(board)
         score = 0
@@ -80,10 +84,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
         val points = Scoring.points(piece.size, placement.clearedUnits, streak)
         score += points
-        if (score > best) {
-            best = score
-            prefs.edit().putInt(KEY_BEST, best).apply()
-        }
+        bests.record(score)
         gain = Gain(gainCounter++, points, placement.clearedUnits, streak)
 
         tray = tray.toMutableList().also { it[index] = null }
@@ -114,7 +115,6 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val PREFS = "block_nine"
-        const val KEY_BEST = "best_score"
         const val CLEAR_FLASH_MS = 190L
     }
 }

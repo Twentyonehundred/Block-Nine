@@ -82,6 +82,7 @@ private fun draggedTopLeft(piece: Piece, pointer: Offset, cell: Float) = Offset(
 fun GameScreen(
     vm: GameViewModel = viewModel(),
     leaderboard: LeaderboardViewModel = viewModel(),
+    settings: SettingsViewModel = viewModel(),
 ) {
     val colors = LocalBoardColors.current
     val haptics = LocalHapticFeedback.current
@@ -90,6 +91,7 @@ fun GameScreen(
     var boardCell by remember { mutableFloatStateOf(0f) }
     var drag by remember { mutableStateOf<DragState?>(null) }
     var showLeaderboard by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var confirmNewGame by remember { mutableStateOf(false) }
 
     // A finished game is the only thing worth ranking, so submit exactly once per game over.
@@ -158,6 +160,7 @@ fun GameScreen(
                 photoUrl = leaderboard.player?.photoUrl,
                 onNewGame = ::requestNewGame,
                 onLeaderboard = { showLeaderboard = true },
+                onSettings = { showSettings = true },
             )
 
             Spacer(Modifier.height(20.dp))
@@ -220,7 +223,7 @@ fun GameScreen(
 
         FloatingGain(vm = vm, boardOrigin = boardOrigin, boardCell = boardCell, colors = colors)
 
-        if (vm.gameOver && !showLeaderboard) {
+        if (vm.gameOver && !showLeaderboard && !showSettings) {
             GameOverOverlay(
                 score = vm.score,
                 best = vm.best,
@@ -245,8 +248,17 @@ fun GameScreen(
         if (showLeaderboard) {
             LeaderboardOverlay(
                 vm = leaderboard,
+                bests = vm.bests,
                 colors = colors,
                 onDismiss = { showLeaderboard = false },
+            )
+        }
+
+        if (showSettings) {
+            SettingsOverlay(
+                settings = settings,
+                colors = colors,
+                onDismiss = { showSettings = false },
             )
         }
     }
@@ -261,18 +273,22 @@ private fun Header(
     photoUrl: String?,
     onNewGame: () -> Unit,
     onLeaderboard: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     Box(
         Modifier
             .fillMaxWidth()
             .padding(top = 12.dp)
     ) {
-        AccountButton(
-            photoUrl = photoUrl,
-            colors = colors,
-            onClick = onLeaderboard,
+        // Both left-hand buttons open an overlay; NEW acts on the game, so it stays apart.
+        Row(
             modifier = Modifier.align(Alignment.CenterStart),
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AccountButton(photoUrl = photoUrl, colors = colors, onClick = onLeaderboard)
+            SettingsButton(colors = colors, onClick = onSettings)
+        }
 
         Column(
             modifier = Modifier.align(Alignment.Center),
@@ -392,6 +408,7 @@ private fun PieceCanvas(
     val density = LocalDensity.current
     val width = with(density) { (piece.width * cell).toDp() }
     val height = with(density) { (piece.height * cell).toDp() }
+    val tileStyle = LocalTileStyle.current
 
     Canvas(modifier.size(width, height)) {
         for (c in piece.cells) {
@@ -401,6 +418,7 @@ private fun PieceCanvas(
                 cell = cell,
                 fill = colors.tile,
                 edge = colors.tileEdge,
+                style = tileStyle,
                 alpha = alpha,
             )
         }

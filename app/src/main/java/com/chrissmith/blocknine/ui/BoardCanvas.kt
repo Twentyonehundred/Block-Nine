@@ -21,6 +21,8 @@ import com.chrissmith.blocknine.game.Cell
 /**
  * Draws one tile within the cell whose top-left is ([left], [top]).
  *
+ * [style] decides whether the tile is inset with rounded corners or fills the cell as a
+ * square, in which case neighbouring tiles touch and their outlines merge into one seam.
  * [shrink] pulls the tile in towards its own centre (used by the clear animation) and
  * [alpha] scales the whole thing's opacity (used by both the clear animation and ghosts).
  */
@@ -30,17 +32,19 @@ fun DrawScope.drawTile(
     cell: Float,
     fill: Color,
     edge: Color?,
+    style: TileStyle = TileStyle.ROUNDED,
     alpha: Float = 1f,
     shrink: Float = 0f,
 ) {
-    val inset = cell * 0.05f
+    val solid = style == TileStyle.SOLID
+    val inset = if (solid) 0f else cell * 0.05f
     val pull = cell * 0.5f * shrink
     val side = cell - inset * 2f - pull * 2f
     if (side <= 0f || alpha <= 0f) return
 
     val topLeft = Offset(left + inset + pull, top + inset + pull)
     val boxSize = Size(side, side)
-    val radius = CornerRadius(cell * 0.15f)
+    val radius = if (solid) CornerRadius.Zero else CornerRadius(cell * 0.15f)
 
     drawRoundRect(fill.copy(alpha = fill.alpha * alpha), topLeft, boxSize, radius)
     if (edge != null) {
@@ -77,6 +81,8 @@ fun BoardCanvas(
             flash.animateTo(1f, tween(durationMillis = 190, easing = LinearEasing))
         }
     }
+
+    val tileStyle = LocalTileStyle.current
 
     Canvas(modifier) {
         val cell = size.width / Board.SIZE
@@ -119,6 +125,7 @@ fun BoardCanvas(
                     cell = cell,
                     fill = ghostColor,
                     edge = null,
+                    style = tileStyle,
                     alpha = if (ghostValid) 0.38f else 0.28f,
                 )
             }
@@ -136,6 +143,7 @@ fun BoardCanvas(
                     cell = cell,
                     fill = if (progress > 0f) lerp(colors.tile, Color.White, progress) else colors.tile,
                     edge = if (progress > 0f) null else colors.tileEdge,
+                    style = tileStyle,
                     alpha = 1f - progress,
                     shrink = progress * 0.45f,
                 )

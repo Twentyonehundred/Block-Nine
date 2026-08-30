@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chrissmith.blocknine.game.PersonalBests
 import com.chrissmith.blocknine.leaderboard.BoardState
 import com.chrissmith.blocknine.leaderboard.Entry
 import com.chrissmith.blocknine.leaderboard.LeaderboardViewModel
@@ -46,12 +47,16 @@ import com.chrissmith.blocknine.leaderboard.Period
 @Composable
 fun LeaderboardOverlay(
     vm: LeaderboardViewModel,
+    bests: PersonalBests,
     colors: BoardColors,
     onDismiss: () -> Unit,
 ) {
     val activity = LocalActivity.current
 
-    LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(Unit) {
+        bests.refresh()
+        vm.refresh()
+    }
 
     Box(
         modifier = Modifier
@@ -90,6 +95,9 @@ fun LeaderboardOverlay(
                 )
 
                 Spacer(Modifier.height(16.dp))
+                PersonalBestStrip(bests = bests, colors = colors)
+
+                Spacer(Modifier.height(18.dp))
                 PeriodTabs(selected = vm.period, colors = colors, onSelect = vm::select)
                 Spacer(Modifier.height(16.dp))
 
@@ -148,6 +156,56 @@ fun LeaderboardOverlay(
                 }
             }
         }
+    }
+}
+
+/**
+ * The player's own three records. Above the leaderboard rather than inside it because this
+ * part works signed out — it's the whole scoreboard for anyone who never signs in.
+ */
+@Composable
+private fun PersonalBestStrip(bests: PersonalBests, colors: BoardColors) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.boxShaded)
+            .padding(vertical = 12.dp),
+    ) {
+        Text(
+            text = "YOUR BEST",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp,
+            color = colors.textMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth()) {
+            BestCell("Today", bests.day, colors, Modifier.weight(1f))
+            BestCell("This month", bests.month, colors, Modifier.weight(1f))
+            BestCell("All time", bests.allTime, colors, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun BestCell(label: String, score: Int, colors: BoardColors, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = score.toString(),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            // A zero is a prompt to go and set one, not an achievement, so it stays quiet.
+            color = if (score > 0) colors.textPrimary else colors.textMuted,
+        )
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = colors.textMuted,
+            maxLines = 1,
+        )
     }
 }
 

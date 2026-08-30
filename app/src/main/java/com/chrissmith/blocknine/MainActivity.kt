@@ -4,16 +4,21 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrissmith.blocknine.ui.BlockNineTheme
 import com.chrissmith.blocknine.ui.GameScreen
+import com.chrissmith.blocknine.ui.SettingsViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            BlockNineTheme {
-                GameScreen()
+            // Hoisted above the theme rather than left inside GameScreen: the palette and the
+            // tile style are what BlockNineTheme provides, so it has to be told them here.
+            val settings: SettingsViewModel = viewModel()
+            BlockNineTheme(theme = settings.theme, tileStyle = settings.tileStyle) {
+                GameScreen(settings = settings)
             }
         }
     }
