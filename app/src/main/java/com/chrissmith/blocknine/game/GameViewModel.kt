@@ -79,8 +79,13 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         return board.clearsFrom(piece, row, col)
     }
 
-    /** True if this piece has nowhere left to go, so the UI can grey it out. */
-    fun isDead(piece: Piece): Boolean = !gameOver && !board.hasAnyPlacement(piece)
+    /**
+     * True if this piece has nowhere left to go, so the UI can grey it out.
+     *
+     * Still answered once the game is over, which is when every piece left in the tray is
+     * dead: the game-over card should show why it ended, not a tray that looks playable.
+     */
+    fun isDead(piece: Piece): Boolean = !board.hasAnyPlacement(piece)
 
     fun place(index: Int, row: Int, col: Int) {
         if (!canPlace(index, row, col)) return
