@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    LeaderboardRepository looks default_web_client_id up by name through
+    Resources.getIdentifier(), rather than R.string, so that the app still compiles when there
+    is no google-services.json to generate it. The resource shrinker cannot see a lookup like
+    that, so in a release build it decided the string was unused and dropped it — leaving
+    sign-in to fail at runtime with "Google sign-in is not enabled on the Firebase project".
+
+    Firebase's other generated strings survive because its own libraries declare keep rules for
+    them; this one is ours to protect. Naming a resource that does not exist is harmless, so
+    this stays valid in builds made without google-services.json.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/default_web_client_id" />
