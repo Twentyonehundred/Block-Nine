@@ -29,6 +29,41 @@ class PiecesTest {
         }
     }
 
+    /** Rotates a shape a quarter turn clockwise and renormalises it to the origin. */
+    private fun rotated(piece: Piece): Set<Cell> {
+        val turned = piece.cells.map { Cell(row = it.col, col = piece.height - 1 - it.row) }
+        val top = turned.minOf { it.row }
+        val left = turned.minOf { it.col }
+        return turned.mapTo(HashSet()) { Cell(it.row - top, it.col - left) }
+    }
+
+    private fun cellsOf(id: String) = Pieces.ALL.first { it.id == id }.cells.toSet()
+
+    /**
+     * Asserts that [ids] name four distinct [size]-cell shapes forming a full rotation cycle:
+     * turning each one clockwise lands exactly on the next, and the last comes back round.
+     */
+    private fun assertRotationCycle(size: Int, vararg ids: String) {
+        val shapes = ids.map { cellsOf(it) }
+        assertEquals("${ids.toList()} should be four different shapes", 4, shapes.toSet().size)
+        for ((id, shape) in ids.zip(shapes)) assertEquals("$id cell count", size, shape.size)
+        for (i in ids.indices) {
+            val turned = rotated(Piece("turned", shapes[i].toList()))
+            val next = (i + 1) % ids.size
+            assertEquals("${ids[i]} turned clockwise should be ${ids[next]}", shapes[next], turned)
+        }
+    }
+
+    @Test
+    fun `the long T is dealable in all four orientations`() {
+        assertRotationCycle(5, "t5-up", "t5-left", "t5-down", "t5-right")
+    }
+
+    @Test
+    fun `the U is dealable in all four orientations`() {
+        assertRotationCycle(5, "u-up", "u-right", "u-down", "u-left")
+    }
+
     @Test
     fun `the 3x3 block is not dealable`() {
         assertTrue(Pieces.ALL.none { it.cells.size == 9 })

@@ -30,8 +30,8 @@ object Pieces {
      * Every shape that can be dealt, with its relative weight. Rotations are listed explicitly
      * — pieces don't rotate in-hand.
      *
-     * The deal is weighted rather than uniform. With 35 shapes a flat draw makes each one turn
-     * up about 3% of the time, which buries the small pieces that let you dig out of a tight
+     * The deal is weighted rather than uniform. With this many shapes a flat draw makes each one
+     * turn up about 3% of the time, which buries the small pieces that let you dig out of a tight
      * board and hands out the awkward 2x3 slabs as often as anything else. Weights are relative
      * only: a 8 is dealt eight times as often as a 1, and the scale has no other meaning.
      */
@@ -73,6 +73,20 @@ object Pieces {
         entry("t-down", 3, ".#.", "###"),
         entry("t-left", 3, ".#", "##", ".#"),
         entry("t-right", 3, "#.", "##", "#."),
+
+        // Long T shapes: five cells on a full 3x3 footprint, so as scarce as the big corners.
+        // Each is the small T of the same name with its stem stretched by one.
+        entry("t5-up", 2, "###", ".#.", ".#."),
+        entry("t5-down", 2, ".#.", ".#.", "###"),
+        entry("t5-left", 2, "..#", "###", "..#"),
+        entry("t5-right", 2, "#..", "###", "#.."),
+
+        // U shapes: a run of three with a cell stood up at each end. Named for the way the
+        // mouth faces. Only 3x2, so a shade less demanding than the long Ts.
+        entry("u-up", 2, "#.#", "###"),
+        entry("u-down", 2, "###", "#.#"),
+        entry("u-left", 2, "##", ".#", "##"),
+        entry("u-right", 2, "##", "#.", "##"),
 
         // S / Z shapes. The hardest four-cell shapes to place, so the rarest of them.
         entry("s-h", 2, ".##", "##."),

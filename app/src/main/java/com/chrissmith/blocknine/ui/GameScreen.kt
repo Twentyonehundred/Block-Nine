@@ -59,6 +59,7 @@ import com.chrissmith.blocknine.game.Board
 import com.chrissmith.blocknine.game.Cell
 import com.chrissmith.blocknine.game.GameViewModel
 import com.chrissmith.blocknine.game.Piece
+import com.chrissmith.blocknine.game.Scoring
 import com.chrissmith.blocknine.leaderboard.LeaderboardViewModel
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -318,7 +319,7 @@ private fun Header(
                 if (streak > 1) {
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        text = "STREAK ×$streak",
+                        text = "COMBO ×$streak",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.accent,
@@ -448,15 +449,13 @@ private fun FloatingGain(
         val progress = remember { Animatable(0f) }
         LaunchedEffect(Unit) { progress.animateTo(1f, tween(durationMillis = 900)) }
 
-        val label = if (gain.clearedUnits >= 2) "+${gain.points}  ×${gain.clearedUnits}" else "+${gain.points}"
+        // Names the bonus rather than leaving the player to work out why the number jumped.
+        val shout = Scoring.label(gain.clearedUnits, gain.streak)
         val boardHeight = boardCell * Board.SIZE
 
         Box(Modifier.fillMaxSize()) {
-            Text(
-                text = label,
-                fontSize = if (gain.clearedUnits > 0) 34.sp else 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (gain.clearedUnits > 0) colors.accent else colors.textMuted,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset {
@@ -466,7 +465,23 @@ private fun FloatingGain(
                         )
                     }
                     .alpha(1f - progress.value),
-            )
+            ) {
+                Text(
+                    text = "+${gain.points}",
+                    fontSize = if (gain.clearedUnits > 0) 34.sp else 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (gain.clearedUnits > 0) colors.accent else colors.textMuted,
+                )
+                if (shout != null) {
+                    Text(
+                        text = shout,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = colors.complete,
+                    )
+                }
+            }
         }
     }
 }
