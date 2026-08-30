@@ -30,6 +30,31 @@ class PiecesTest {
     }
 
     @Test
+    fun `the 3x3 block is not dealable`() {
+        assertTrue(Pieces.ALL.none { it.cells.size == 9 })
+    }
+
+    @Test
+    fun `the deal favours small pieces over the 2x3 slabs`() {
+        // Fixed seed, so this measures the weighting rather than luck. An empty board never
+        // forces a reroll, which keeps the sample a clean draw from the catalogue.
+        val random = Random(20260830)
+        val counts = mutableMapOf<String, Int>()
+        repeat(5_000) {
+            Pieces.dealTray(Board.empty(), random).forEach {
+                counts[it.id] = (counts[it.id] ?: 0) + 1
+            }
+        }
+
+        val small = listOf("dot", "h2", "v2").sumOf { counts[it] ?: 0 }
+        val slabs = listOf("rect23", "rect32").sumOf { counts[it] ?: 0 }
+
+        assertTrue("small pieces were $small of 15000, expected roughly a fifth", small > 2_000)
+        assertTrue("2x3 slabs were $slabs of 15000, expected roughly 2%", slabs < 500)
+        assertTrue("2x3 slabs should still appear", slabs > 0)
+    }
+
+    @Test
     fun `a tray always has three pieces`() {
         repeat(50) { seed ->
             val tray = Pieces.dealTray(Board.empty(), Random(seed))

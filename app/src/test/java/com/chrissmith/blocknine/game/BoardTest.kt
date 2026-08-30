@@ -161,21 +161,23 @@ class BoardTest {
     }
 
     @Test
-    fun `a 3x3 piece needs a clear 3x3 region`() {
-        // Every 3x3 box has its centre blocked, so the big square cannot fit anywhere.
+    fun `a 2x3 piece needs two clear rows`() {
+        // Striped: no two adjacent rows are ever both open, so nothing two cells tall fits,
+        // however much horizontal room is left.
         val board = Board.of(
+            "#########",
             ".........",
-            ".#..#..#.",
+            "#########",
             ".........",
+            "#########",
             ".........",
-            ".#..#..#.",
+            "#########",
             ".........",
-            ".........",
-            ".#..#..#.",
-            ".........",
+            "#########",
         )
 
-        assertFalse(board.hasAnyPlacement(shape("sq3")))
-        assertTrue(board.hasAnyPlacement(shape("sq2")))
+        assertFalse(board.hasAnyPlacement(shape("rect23")))
+        assertFalse(board.hasAnyPlacement(shape("rect32")))
+        assertTrue(board.hasAnyPlacement(shape("h3")))
     }
 }
