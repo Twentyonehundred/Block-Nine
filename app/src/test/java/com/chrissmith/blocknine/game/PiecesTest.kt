@@ -65,6 +65,39 @@ class PiecesTest {
     }
 
     @Test
+    fun `diagonals run both ways at both lengths`() {
+        // A diagonal only has two orientations — turning a backslash a quarter turn gives a
+        // forward slash — so this can't use assertRotationCycle.
+        for (length in listOf(2, 3)) {
+            val down = cellsOf("diag$length-down")
+            val up = cellsOf("diag$length-up")
+            assertEquals("diag$length-down cell count", length, down.size)
+            assertEquals("diag$length-up cell count", length, up.size)
+            assertEquals(
+                "diag$length-down should run top-left to bottom-right",
+                (0 until length).map { Cell(it, it) }.toSet(),
+                down,
+            )
+            assertEquals(
+                "diag$length-up should be its mirror",
+                (0 until length).map { Cell(it, length - 1 - it) }.toSet(),
+                up,
+            )
+        }
+    }
+
+    @Test
+    fun `diagonal cells only ever touch at the corners`() {
+        for (id in listOf("diag2-down", "diag2-up", "diag3-down", "diag3-up")) {
+            val cells = cellsOf(id)
+            val touching = cells.filter { cell ->
+                Cell(cell.row + 1, cell.col) in cells || Cell(cell.row, cell.col + 1) in cells
+            }
+            assertTrue("$id has edge-to-edge neighbours at $touching", touching.isEmpty())
+        }
+    }
+
+    @Test
     fun `colour slots use the whole palette and never repeat next door`() {
         val slots = Pieces.ALL.map { it.colorSlot }
         assertEquals("every slot should be used", Pieces.COLOUR_SLOTS, slots.toSet().size)

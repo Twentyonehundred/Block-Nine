@@ -50,6 +50,16 @@ object Pieces {
         entry("h5", 2, "#####"),
         entry("v5", 2, "#", "#", "#", "#", "#"),
 
+        // Diagonals. Named for the way the run travels as you read left to right: "down" is a
+        // backslash, "up" is a forward slash. They only ever touch at the corners, so they
+        // never finish a line by themselves — what they are good for is picking off the
+        // scattered single holes a board collects, which earns the two-cell pair a decent
+        // weight. The three-cell version wants a clear diagonal across a 3x3, so it is scarce.
+        entry("diag2-down", 4, "#.", ".#"),
+        entry("diag2-up", 4, ".#", "#."),
+        entry("diag3-down", 2, "#..", ".#.", "..#"),
+        entry("diag3-up", 2, "..#", ".#.", "#.."),
+
         // Rectangles. No 3x3: it demands an entirely empty box and ends too many games on its
         // own. The 2x3 slabs are kept but made scarce for the same reason, milder.
         entry("sq2", 6, "##", "##"),
