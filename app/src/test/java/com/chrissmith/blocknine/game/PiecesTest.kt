@@ -65,6 +65,27 @@ class PiecesTest {
     }
 
     @Test
+    fun `colour slots use the whole palette and never repeat next door`() {
+        val slots = Pieces.ALL.map { it.colorSlot }
+        assertEquals("every slot should be used", Pieces.COLOUR_SLOTS, slots.toSet().size)
+        assertTrue("slots must be in range, got ${slots.toSet()}", slots.all { it in 0 until Pieces.COLOUR_SLOTS })
+        // Rotations of a shape are listed together, so neighbours matching would put a whole
+        // family in one colour.
+        assertTrue(
+            "adjacent shapes share a colour",
+            slots.zipWithNext().none { it.first == it.second },
+        )
+    }
+
+    @Test
+    fun `a placed piece keeps its own colour on the board`() {
+        val piece = Pieces.ALL.first { it.colorSlot == 3 }
+        val board = Board.empty().place(piece, 0, 0).afterClear
+        val cell = piece.cells.first()
+        assertEquals(3, board.colorSlotAt(cell.row, cell.col))
+    }
+
+    @Test
     fun `the 3x3 block is not dealable`() {
         assertTrue(Pieces.ALL.none { it.cells.size == 9 })
     }

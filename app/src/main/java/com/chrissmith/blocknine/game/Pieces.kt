@@ -35,7 +35,7 @@ object Pieces {
      * board and hands out the awkward 2x3 slabs as often as anything else. Weights are relative
      * only: a 8 is dealt eight times as often as a 1, and the scale has no other meaning.
      */
-    private val CATALOGUE: List<Entry> = listOf(
+    private val SHAPES: List<Entry> = listOf(
         // Small change. These are the release valve on a congested board, so they are the most
         // common things in the bag.
         entry("dot", 8, "#"),
@@ -105,8 +105,25 @@ object Pieces {
         entry("j-d", 3, "###", "..#"),
     )
 
+    /** How many fills the multicolour option cycles through. */
+    const val COLOUR_SLOTS = 6
+
+    /**
+     * The catalogue proper, with each shape given a colour slot.
+     *
+     * Slots are handed out by position, so neighbouring entries — which is to say the four
+     * rotations of the same shape — never share a colour, and a family of four spreads across
+     * the palette instead of clumping.
+     */
+    private val CATALOGUE: List<Entry> = SHAPES.mapIndexed { index, entry ->
+        Entry(entry.piece.copy(colorSlot = index % COLOUR_SLOTS), entry.weight)
+    }
+
     /** Every dealable shape, weights discarded. */
     val ALL: List<Piece> = CATALOGUE.map { it.piece }
+
+    /** Finds a shape by id, for rebuilding a tray from a saved game. Null if the id is unknown. */
+    fun byId(id: String): Piece? = ALL.firstOrNull { it.id == id }
 
     private val totalWeight: Int = CATALOGUE.sumOf { it.weight }
 

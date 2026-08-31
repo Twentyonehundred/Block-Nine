@@ -17,7 +17,11 @@ class MainActivity : ComponentActivity() {
             // Hoisted above the theme rather than left inside GameScreen: the palette and the
             // tile style are what BlockNineTheme provides, so it has to be told them here.
             val settings: SettingsViewModel = viewModel()
-            BlockNineTheme(theme = settings.theme, tileStyle = settings.tileStyle) {
+            BlockNineTheme(
+                theme = settings.theme,
+                tileStyle = settings.tileStyle,
+                tileColour = settings.tileColour,
+            ) {
                 GameScreen(settings = settings)
             }
         }

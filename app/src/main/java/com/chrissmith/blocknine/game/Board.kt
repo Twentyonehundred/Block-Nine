@@ -32,6 +32,22 @@ class Board private constructor(private val grid: List<Int>) {
 
     fun isFilled(row: Int, col: Int): Boolean = get(row, col) != EMPTY
 
+    /**
+     * The colour slot of the piece that filled this cell, or 0 if it's empty.
+     *
+     * A cell holds its slot plus one so that zero can go on meaning empty, which keeps the
+     * grid a plain list of ints and [isFilled] a comparison against [EMPTY].
+     */
+    fun colorSlotAt(row: Int, col: Int): Int = (get(row, col) - 1).coerceAtLeast(0)
+
+    /**
+     * The board as [SIZE] * [SIZE] characters: '.' for an empty cell, otherwise the colour
+     * slot as a digit. Round-trips through [decode] for the saved game.
+     */
+    fun encode(): String = buildString(SIZE * SIZE) {
+        grid.forEach { append(if (it == EMPTY) EMPTY_CHAR else '0' + (it - 1).coerceIn(0, 9)) }
+    }
+
     /** True if [piece]'s bounding box lands in-bounds at ([row], [col]) over only empty cells. */
     fun canPlace(piece: Piece, row: Int, col: Int): Boolean {
         if (row < 0 || col < 0) return false
@@ -92,7 +108,7 @@ class Board private constructor(private val grid: List<Int>) {
 
         val filled = grid.toMutableList()
         for (cell in piece.cells) {
-            filled[(row + cell.row) * SIZE + (col + cell.col)] = FILLED
+            filled[(row + cell.row) * SIZE + (col + cell.col)] = piece.colorSlot + 1
         }
         val beforeClear = Board(filled)
 
@@ -128,7 +144,28 @@ class Board private constructor(private val grid: List<Int>) {
         const val EMPTY = 0
         const val FILLED = 1
 
+        private const val EMPTY_CHAR = '.'
+
         fun empty(): Board = Board(List(SIZE * SIZE) { EMPTY })
+
+        /**
+         * Rebuilds a board from [encode], or null if the text isn't a board.
+         *
+         * Anything filled but unrecognised is read as colour slot 0, so a save written before
+         * shapes had colours still loads rather than throwing away a game in progress.
+         */
+        fun decode(text: String): Board? {
+            if (text.length != SIZE * SIZE) return null
+            return Board(
+                text.map { ch ->
+                    when {
+                        ch == EMPTY_CHAR -> EMPTY
+                        ch.isDigit() -> (ch - '0') + 1
+                        else -> FILLED
+                    }
+                }
+            )
+        }
 
         /** Builds a board from row strings, where any non-'.' character is a filled cell. Test helper. */
         fun of(vararg rows: String): Board {

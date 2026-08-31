@@ -7,6 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -24,6 +25,11 @@ data class BoardColors(
     val boxBorder: Color,
     val tile: Color,
     val tileEdge: Color,
+    /**
+     * The fills the multicolour option cycles through, indexed by a piece's colour slot.
+     * Tuned per theme so the set still belongs on that sheet; [tile] is always the first.
+     */
+    val tilePalette: List<Color>,
     val ghost: Color,
     val invalid: Color,
     /** Marks a row, column or box the pending drop would complete. Reads against [invalid]. */
@@ -37,6 +43,12 @@ data class BoardColors(
 enum class TileStyle(val label: String, val blurb: String) {
     ROUNDED("Rounded", "Tiles sit inside their cell with a gap between them."),
     SOLID("Touching", "Tiles fill the cell edge to edge, outlined like the original."),
+}
+
+/** Whether every block shares the theme's colour or each shape brings its own. Cosmetic only. */
+enum class TileColour(val label: String, val blurb: String) {
+    VARIED("Multicolour", "Every shape has its own colour, like the original."),
+    SINGLE("One colour", "Every block is painted in the theme's single block colour."),
 }
 
 /** The palettes offered in settings. [SYSTEM] follows the device's light/dark setting. */
@@ -60,6 +72,14 @@ private val ClassicBoard = BoardColors(
     boxBorder = Color(0xFF39414D),
     tile = Color(0xFF2F7DF6),
     tileEdge = Color(0xFF2A3A4F),
+    tilePalette = listOf(
+        Color(0xFF2F7DF6), // blue
+        Color(0xFFEF5A5A), // coral
+        Color(0xFF23A55A), // green
+        Color(0xFFF2A31B), // amber
+        Color(0xFF9B5DE5), // violet
+        Color(0xFF10B4C4), // teal
+    ),
     ghost = Color(0xFF2F7DF6),
     invalid = Color(0xFFEF4444),
     complete = Color(0xFF16A34A),
@@ -77,6 +97,14 @@ private val WarmBoard = BoardColors(
     boxBorder = Color(0xFF8A7A62),
     tile = Color(0xFFE8833A),
     tileEdge = Color(0xFFB85F1C),
+    tilePalette = listOf(
+        Color(0xFFE8833A), // orange
+        Color(0xFFC94F3D), // brick
+        Color(0xFF6E9A45), // olive
+        Color(0xFFD9A62E), // mustard
+        Color(0xFF8A6BAE), // mauve
+        Color(0xFF3F8C8C), // slate teal
+    ),
     ghost = Color(0xFFE8833A),
     invalid = Color(0xFFD94F4F),
     complete = Color(0xFF4F8F3A),
@@ -93,6 +121,14 @@ private val DarkBoard = BoardColors(
     boxBorder = Color(0xFF5A6E8C),
     tile = Color(0xFF3B82F6),
     tileEdge = Color(0xFF1D4ED8),
+    tilePalette = listOf(
+        Color(0xFF3B82F6), // blue
+        Color(0xFFF87171), // rose
+        Color(0xFF34D399), // mint
+        Color(0xFFFBBF24), // amber
+        Color(0xFFA78BFA), // lilac
+        Color(0xFF22D3EE), // cyan
+    ),
     ghost = Color(0xFF60A5FA),
     invalid = Color(0xFFEF4444),
     complete = Color(0xFF22C55E),
@@ -121,10 +157,49 @@ val LocalBoardColors = staticCompositionLocalOf { ClassicBoard }
 /** Read by the two canvases that draw tiles, so the choice doesn't have to be threaded by hand. */
 val LocalTileStyle = staticCompositionLocalOf { TileStyle.ROUNDED }
 
+val LocalTileColour = staticCompositionLocalOf { TileColour.VARIED }
+
+/**
+ * Turns a piece's colour slot into a fill and an outline.
+ *
+ * Exists so that every place which draws a tile can ask the same question and stay ignorant
+ * of whether the multicolour option is on. Build one per canvas with [rememberTilePainter].
+ */
+@Immutable
+class TilePainter(private val colors: BoardColors, private val varied: Boolean) {
+
+    fun fill(slot: Int): Color =
+        if (varied) colors.tilePalette[slot.mod(colors.tilePalette.size)] else colors.tile
+
+    /** The drop preview's colour: the shape's own when multicoloured, else the theme's ghost. */
+    fun ghost(slot: Int): Color = if (varied) fill(slot) else colors.ghost
+
+    /**
+     * A darker relative of the fill, so a multicoloured tile is outlined in its own colour
+     * rather than the one edge tone that only suits [BoardColors.tile].
+     */
+    fun edge(slot: Int): Color {
+        if (!varied) return colors.tileEdge
+        val fill = fill(slot)
+        return Color(fill.red * EDGE_SHADE, fill.green * EDGE_SHADE, fill.blue * EDGE_SHADE, fill.alpha)
+    }
+
+    private companion object {
+        const val EDGE_SHADE = 0.58f
+    }
+}
+
+@Composable
+fun rememberTilePainter(colors: BoardColors = LocalBoardColors.current): TilePainter {
+    val varied = LocalTileColour.current == TileColour.VARIED
+    return remember(colors, varied) { TilePainter(colors, varied) }
+}
+
 @Composable
 fun BlockNineTheme(
     theme: BoardTheme = BoardTheme.SYSTEM,
     tileStyle: TileStyle = TileStyle.ROUNDED,
+    tileColour: TileColour = TileColour.VARIED,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -150,6 +225,7 @@ fun BlockNineTheme(
     CompositionLocalProvider(
         LocalBoardColors provides board,
         LocalTileStyle provides tileStyle,
+        LocalTileColour provides tileColour,
     ) {
         MaterialTheme(colorScheme = scheme, content = content)
     }

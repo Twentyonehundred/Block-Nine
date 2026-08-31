@@ -8,7 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 
-/** The two look-and-feel choices, remembered on the device. */
+/** The look-and-feel choices, remembered on the device. */
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -17,6 +17,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var tileStyle by mutableStateOf(prefs.enum(KEY_TILE_STYLE, TileStyle.ROUNDED))
+        private set
+
+    var tileColour by mutableStateOf(prefs.enum(KEY_TILE_COLOUR, TileColour.VARIED))
         private set
 
     fun choose(theme: BoardTheme) {
@@ -29,10 +32,16 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString(KEY_TILE_STYLE, style.name).apply()
     }
 
+    fun choose(colour: TileColour) {
+        tileColour = colour
+        prefs.edit().putString(KEY_TILE_COLOUR, colour.name).apply()
+    }
+
     private companion object {
         const val PREFS = "block_nine"
         const val KEY_THEME = "board_theme"
         const val KEY_TILE_STYLE = "tile_style"
+        const val KEY_TILE_COLOUR = "tile_colour"
 
         /**
          * Enums are stored by name so the file stays readable, but a name that no longer

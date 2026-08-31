@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -86,7 +88,10 @@ private fun GearGlyph(tint: Color) {
     }
 }
 
-/** Look-and-feel choices: which palette to paint with, and how tiles sit in their cells. */
+/**
+ * Look-and-feel choices: which palette to paint with, how tiles sit in their cells, and
+ * whether every shape shares one colour.
+ */
 @Composable
 fun SettingsOverlay(
     settings: SettingsViewModel,
@@ -119,7 +124,13 @@ fun SettingsOverlay(
                     onClick = {},
                 ),
         ) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 22.dp)) {
+            // Three sections is enough to overrun a short screen in a large font size, so the
+            // card scrolls rather than pushing Done off the bottom.
+            Column(
+                Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 22.dp)
+            ) {
                 Text(
                     text = "Look & feel",
                     fontSize = 20.sp,
@@ -167,6 +178,30 @@ fun SettingsOverlay(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
+                Spacer(Modifier.height(22.dp))
+                SectionLabel("COLOUR", colors)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TileColour.entries.forEach { colour ->
+                        TileColourCard(
+                            colour = colour,
+                            selected = colour == settings.tileColour,
+                            colors = colors,
+                            onClick = { settings.choose(colour) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = settings.tileColour.blurb,
+                    fontSize = 12.sp,
+                    color = colors.textMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
                 Spacer(Modifier.height(10.dp))
                 TextButton(
                     onClick = onDismiss,
@@ -201,6 +236,8 @@ private fun ThemeSwatch(
 ) {
     val preview = theme.palette(isSystemInDarkTheme())
     val tileStyle = LocalTileStyle.current
+    // Painted with that theme's own colours, so the swatch shows what picking it would do.
+    val painter = rememberTilePainter(preview)
 
     Column(
         modifier = modifier.clickable(onClick = onClick),
@@ -230,8 +267,8 @@ private fun ThemeSwatch(
                     )
                 }
             }
-            drawTile(originX, 0f, cell, preview.tile, preview.tileEdge, tileStyle)
-            drawTile(originX + cell, cell, cell, preview.tile, preview.tileEdge, tileStyle)
+            drawTile(originX, 0f, cell, painter.fill(0), painter.edge(0), tileStyle)
+            drawTile(originX + cell, cell, cell, painter.fill(1), painter.edge(1), tileStyle)
         }
 
         Spacer(Modifier.height(6.dp))
@@ -241,6 +278,65 @@ private fun ThemeSwatch(
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = if (selected) colors.textPrimary else colors.textMuted,
             maxLines = 1,
+        )
+    }
+}
+
+/** A colour option, previewed as a row of four tiles in the colours that option would use. */
+@Composable
+private fun TileColourCard(
+    colour: TileColour,
+    selected: Boolean,
+    colors: BoardColors,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tileStyle = LocalTileStyle.current
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) colors.tile.copy(alpha = 0.12f) else Color.Transparent)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) colors.accent else colors.gridLine,
+                shape = RoundedCornerShape(12.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Each card previews its own option rather than the one currently in force, so the
+        // difference between them is visible before you commit to either.
+        val painter = remember(colors, colour) {
+            TilePainter(colors, varied = colour == TileColour.VARIED)
+        }
+
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+        ) {
+            val cell = size.height
+            val originX = (size.width - cell * 4f) / 2f
+            repeat(4) { slot ->
+                drawTile(
+                    left = originX + slot * cell,
+                    top = 0f,
+                    cell = cell,
+                    fill = painter.fill(slot),
+                    edge = painter.edge(slot),
+                    style = tileStyle,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = colour.label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) colors.textPrimary else colors.textMuted,
         )
     }
 }

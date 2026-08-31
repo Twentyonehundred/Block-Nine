@@ -71,6 +71,8 @@ fun BoardCanvas(
     clearing: Set<Int>,
     ghostCells: List<Cell>?,
     ghostValid: Boolean,
+    /** Colour slot of the piece being dragged, so its preview is drawn in its own colour. */
+    ghostSlot: Int,
     completing: Set<Int>,
     colors: BoardColors,
     modifier: Modifier = Modifier,
@@ -87,6 +89,7 @@ fun BoardCanvas(
     }
 
     val tileStyle = LocalTileStyle.current
+    val painter = rememberTilePainter(colors)
 
     Canvas(modifier) {
         val cell = size.width / Board.SIZE
@@ -130,7 +133,7 @@ fun BoardCanvas(
 
         // Drop preview underneath the real tiles.
         if (ghostCells != null) {
-            val ghostColor = if (ghostValid) colors.ghost else colors.invalid
+            val ghostColor = if (ghostValid) painter.ghost(ghostSlot) else colors.invalid
             for (c in ghostCells) {
                 if (c.row !in 0 until Board.SIZE || c.col !in 0 until Board.SIZE) continue
                 drawTile(
@@ -151,12 +154,14 @@ fun BoardCanvas(
                 if (!board.isFilled(row, col)) continue
                 val isClearing = (row * Board.SIZE + col) in clearing
                 val progress = if (isClearing) flash.value else 0f
+                val slot = board.colorSlotAt(row, col)
+                val tint = painter.fill(slot)
                 drawTile(
                     left = col * cell,
                     top = row * cell,
                     cell = cell,
-                    fill = if (progress > 0f) lerp(colors.tile, Color.White, progress) else colors.tile,
-                    edge = if (progress > 0f) null else colors.tileEdge,
+                    fill = if (progress > 0f) lerp(tint, Color.White, progress) else tint,
+                    edge = if (progress > 0f) null else painter.edge(slot),
                     style = tileStyle,
                     alpha = 1f - progress,
                     shrink = progress * 0.45f,

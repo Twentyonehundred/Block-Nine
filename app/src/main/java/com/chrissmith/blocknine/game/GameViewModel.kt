@@ -31,8 +31,23 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     /** This device's records for today, this month and all time. */
     val bests = PersonalBests(prefs)
 
-    /** Shorthand for the all-time record, which the header and the game-over card both show. */
-    val best: Int get() = bests.allTime
+    private val save = GameSave(prefs)
+
+    /**
+     * The all-time record as it stood when this game began.
+     *
+     * Frozen for the duration, because [bests] is updated on every move: read live, the BEST
+     * line just shadows your score once you're ahead, and there's no target left to chase.
+     */
+    var bestToBeat by mutableIntStateOf(0)
+        private set
+
+    /** True once this game has overtaken the record it started against. */
+    val beatenBest: Boolean get() = bestToBeat > 0 && score > bestToBeat
+
+    /** Set for one animation as the record falls. Keyed so it plays exactly once. */
+    var newBestMoment by mutableStateOf<Long?>(null)
+        private set
 
     /** Consecutive turns that cleared something. Resets on a turn that clears nothing. */
     var streak by mutableIntStateOf(0)
@@ -51,7 +66,31 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     private var gainCounter = 0L
 
     init {
-        newGame()
+        resume()
+    }
+
+    /** Picks up the saved game if there is one, otherwise starts a fresh one. */
+    private fun resume() {
+        val snapshot = save.read()
+        if (snapshot == null) {
+            newGame()
+            return
+        }
+
+        bests.refresh()
+        board = snapshot.board
+        tray = snapshot.tray
+        score = snapshot.score
+        streak = snapshot.streak
+        bestToBeat = snapshot.bestToBeat
+        clearing = emptySet()
+        gain = null
+        newBestMoment = null
+        gameOver = tray.filterNotNull().none { board.hasAnyPlacement(it) }
+
+        // Finished games aren't saved, so this shouldn't happen — but a dead board with no way
+        // to play on would be a nasty thing to hand someone on launch.
+        if (gameOver) newGame()
     }
 
     fun newGame() {
@@ -60,9 +99,12 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         tray = Pieces.dealTray(board)
         score = 0
         streak = 0
+        bestToBeat = bests.allTime
+        newBestMoment = null
         gameOver = false
         clearing = emptySet()
         gain = null
+        save.write(board, tray, score, streak, bestToBeat)
     }
 
     /** True if the piece in [index] can legally land with its top-left corner at ([row], [col]). */
@@ -95,9 +137,11 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         streak = if (placement.clearedUnits > 0) streak + 1 else 0
 
         val points = Scoring.points(piece.size, placement.clearedUnits, streak)
+        val wasBehind = !beatenBest
         score += points
         bests.record(score)
         gain = Gain(gainCounter++, points, placement.clearedUnits, streak)
+        if (wasBehind && beatenBest) newBestMoment = gainCounter++
 
         tray = tray.toMutableList().also { it[index] = null }
 
@@ -117,12 +161,23 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Refills the tray once all three are spent, then works out whether anything still fits. */
+    /**
+     * Refills the tray once all three are spent, works out whether anything still fits, and
+     * commits the result to disk.
+     *
+     * The save happens here rather than in [place] so that a move which clears lines is stored
+     * settled: the ~200ms flash before the cells vanish is the one window where a save would
+     * capture a board that's about to change.
+     */
     private fun advanceTurn() {
         if (tray.all { it == null }) {
             tray = Pieces.dealTray(board)
         }
         gameOver = tray.filterNotNull().none { board.hasAnyPlacement(it) }
+
+        // A finished game has already been counted towards the records, so there is nothing
+        // left to resume — dropping it means the next launch deals a fresh board.
+        if (gameOver) save.clear() else save.write(board, tray, score, streak, bestToBeat)
     }
 
     private companion object {

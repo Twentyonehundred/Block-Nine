@@ -1,6 +1,11 @@
 package com.chrissmith.blocknine.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -35,13 +40,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,14 +70,52 @@ import com.chrissmith.blocknine.game.GameViewModel
 import com.chrissmith.blocknine.game.Piece
 import com.chrissmith.blocknine.game.Scoring
 import com.chrissmith.blocknine.leaderboard.LeaderboardViewModel
+import kotlinx.coroutines.delay
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+/** Beyond three extra pulses the buzz stops reading as a count and starts reading as a rattle. */
+private const val MAX_EXTRA_PULSES = 3
+
+/** Short enough that a quadruple clear finishes buzzing well inside the score animation. */
+private const val PULSE_GAP_MS = 55L
+
+/** How big a tray piece is relative to a board cell, before the slot's own limits apply. */
+private const val TRAY_PIECE_SCALE = 0.56f
+
+/** Long enough to follow with the eye, short enough not to delay the next move. */
+private const val SNAP_BACK_MS = 200
+
+/** Gap between tray slots springing in, so a fresh deal arrives left to right. */
+private const val DEAL_STAGGER_MS = 45L
 
 /** A piece currently under the finger. [pointer] is in root coordinates. */
 private data class DragState(val index: Int, val piece: Piece, val pointer: Offset)
 
+/**
+ * A piece on its way back to the tray after a drop that didn't take.
+ *
+ * Carries where it was let go of and where it belongs, so the piece can be seen returning
+ * rather than blinking out from under the finger and back into its slot.
+ */
+private data class SnapBack(
+    val id: Long,
+    val index: Int,
+    val piece: Piece,
+    val from: Offset,
+    val to: Offset,
+    /** The tile size it settles at, which is smaller than the board cell it was dragged at. */
+    val cell: Float,
+)
+
 /** Where the piece's top-left bounding-box corner sits, given the finger position. */
 private data class Target(val row: Int, val col: Int)
+
+/** The tile size a tray piece is drawn at: shrunk to fit its slot, capped so shapes stay even. */
+private fun trayCell(piece: Piece, boardCell: Float, slot: Size): Float = min(
+    boardCell * TRAY_PIECE_SCALE,
+    min(slot.width / piece.width, slot.height / piece.height),
+)
 
 /**
  * Lifts the dragged piece above the finger so the thumb doesn't cover the drop zone —
@@ -91,6 +138,10 @@ fun GameScreen(
     var boardOrigin by remember { mutableStateOf(Offset.Zero) }
     var boardCell by remember { mutableFloatStateOf(0f) }
     var drag by remember { mutableStateOf<DragState?>(null) }
+    var snapBack by remember { mutableStateOf<SnapBack?>(null) }
+    var snapBackCounter by remember { mutableLongStateOf(0L) }
+    // Where each tray slot sits on screen, so a returning piece knows what it's aiming at.
+    var slotBounds by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
     var showLeaderboard by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var confirmNewGame by remember { mutableStateOf(false) }
@@ -98,6 +149,16 @@ fun GameScreen(
     // A finished game is the only thing worth ranking, so submit exactly once per game over.
     LaunchedEffect(vm.gameOver) {
         if (vm.gameOver) leaderboard.onGameFinished(vm.score)
+    }
+
+    // Every placement gets a tap; a clear gets one extra per unit it took out, so a triple
+    // lands differently in the hand from a single without needing to look up at the score.
+    LaunchedEffect(vm.gain?.id) {
+        val gain = vm.gain ?: return@LaunchedEffect
+        repeat(1 + min(gain.clearedUnits, MAX_EXTRA_PULSES)) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(PULSE_GAP_MS)
+        }
     }
 
     // Abandoning a game part-way still counts — otherwise a good run thrown away by tapping
@@ -122,6 +183,29 @@ fun GameScreen(
         return Target(
             row = ((topLeft.y - boardOrigin.y) / boardCell).roundToInt(),
             col = ((topLeft.x - boardOrigin.x) / boardCell).roundToInt(),
+        )
+    }
+
+    /**
+     * The flight home for a piece that has just been dropped somewhere it can't go.
+     *
+     * Null when the tray hasn't been measured yet, in which case the piece simply disappears
+     * as it used to — there's nowhere meaningful to send it.
+     */
+    fun snapBackFor(state: DragState): SnapBack? {
+        if (boardCell <= 0f) return null
+        val slot = slotBounds[state.index] ?: return null
+        val cell = trayCell(state.piece, boardCell, slot.size)
+        return SnapBack(
+            id = snapBackCounter++,
+            index = state.index,
+            piece = state.piece,
+            from = draggedTopLeft(state.piece, state.pointer, boardCell),
+            to = Offset(
+                x = slot.left + (slot.width - state.piece.width * cell) / 2f,
+                y = slot.top + (slot.height - state.piece.height * cell) / 2f,
+            ),
+            cell = cell,
         )
     }
 
@@ -162,7 +246,8 @@ fun GameScreen(
         ) {
             Header(
                 score = vm.score,
-                best = vm.best,
+                best = vm.bestToBeat,
+                beatenBest = vm.beatenBest,
                 streak = vm.streak,
                 colors = colors,
                 photoUrl = leaderboard.player?.photoUrl,
@@ -178,6 +263,7 @@ fun GameScreen(
                 clearing = vm.clearing,
                 ghostCells = ghostCells,
                 ghostValid = ghostValid,
+                ghostSlot = dragging?.piece?.colorSlot ?: 0,
                 completing = completing,
                 colors = colors,
                 modifier = Modifier
@@ -196,21 +282,35 @@ fun GameScreen(
             Tray(
                 tray = vm.tray,
                 boardCell = boardCell,
-                hiddenIndex = dragging?.index,
+                // A piece in flight is drawn by the overlay, so its slot must stay empty until
+                // it lands — otherwise it appears in two places at once.
+                hiddenIndex = dragging?.index ?: snapBack?.index,
                 colors = colors,
                 isDead = vm::isDead,
-                onDragStart = { index, piece, pointer -> drag = DragState(index, piece, pointer) },
+                onSlotBounds = { index, bounds ->
+                    if (slotBounds[index] != bounds) slotBounds = slotBounds + (index to bounds)
+                },
+                onDragStart = { index, piece, pointer ->
+                    // Picking the piece up again cancels any flight it was already on.
+                    if (snapBack?.index == index) snapBack = null
+                    drag = DragState(index, piece, pointer)
+                },
                 onDrag = { delta -> drag = drag?.let { it.copy(pointer = it.pointer + delta) } },
                 onDragEnd = {
                     val current = drag
                     val where = current?.let { targetOf(it) }
                     if (current != null && where != null && vm.canPlace(current.index, where.row, where.col)) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        // The buzz is fired off the resulting gain, so it can say how big the move was.
                         vm.place(current.index, where.row, where.col)
+                    } else if (current != null) {
+                        snapBack = snapBackFor(current)
                     }
                     drag = null
                 },
-                onDragCancel = { drag = null },
+                onDragCancel = {
+                    drag?.let { snapBack = snapBackFor(it) }
+                    drag = null
+                },
             )
 
             Spacer(Modifier.weight(1f))
@@ -230,12 +330,28 @@ fun GameScreen(
             )
         }
 
+        snapBack?.let { flight ->
+            SnapBackPiece(
+                flight = flight,
+                boardCell = boardCell,
+                colors = colors,
+                onLanded = { if (snapBack?.id == flight.id) snapBack = null },
+            )
+        }
+
         FloatingGain(vm = vm, boardOrigin = boardOrigin, boardCell = boardCell, colors = colors)
+
+        NewBestBanner(
+            moment = vm.newBestMoment,
+            boardOrigin = boardOrigin,
+            boardCell = boardCell,
+            colors = colors,
+        )
 
         if (vm.gameOver && !showLeaderboard && !showSettings) {
             GameOverOverlay(
                 score = vm.score,
-                best = vm.best,
+                best = vm.bestToBeat,
                 colors = colors,
                 onPlayAgain = vm::newGame,
                 onLeaderboard = { showLeaderboard = true },
@@ -276,7 +392,9 @@ fun GameScreen(
 @Composable
 private fun Header(
     score: Int,
+    /** The record as it stood when this game started, so there's a fixed target to chase. */
     best: Int,
+    beatenBest: Boolean,
     streak: Int,
     colors: BoardColors,
     photoUrl: String?,
@@ -303,18 +421,26 @@ private fun Header(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Counted up rather than snapped, so a big clear registers as an event. A new game
+            // snaps instead: watching the score wind back down to zero looks like a bug.
+            val shown by animateIntAsState(
+                targetValue = score,
+                animationSpec = if (score == 0) snap() else tween(durationMillis = 450),
+                label = "score",
+            )
             Text(
-                text = score.toString(),
+                text = shown.toString(),
                 fontSize = 52.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.textPrimary,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "BEST $best",
+                    text = if (beatenBest) "NEW BEST" else "BEST $best",
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.textMuted,
+                    fontWeight = if (beatenBest) FontWeight.Bold else FontWeight.Medium,
+                    letterSpacing = if (beatenBest) 1.sp else 0.sp,
+                    color = if (beatenBest) colors.complete else colors.textMuted,
                 )
                 if (streak > 1) {
                     Spacer(Modifier.width(12.dp))
@@ -334,6 +460,40 @@ private fun Header(
     }
 }
 
+/**
+ * Carries a rejected piece back to its slot, shrinking from board scale down to tray scale
+ * on the way, so a fumbled drop reads as the piece being put back rather than vanishing.
+ */
+@Composable
+private fun SnapBackPiece(
+    flight: SnapBack,
+    boardCell: Float,
+    colors: BoardColors,
+    onLanded: () -> Unit,
+) {
+    if (boardCell <= 0f) return
+
+    key(flight.id) {
+        val progress = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            progress.animateTo(1f, tween(durationMillis = SNAP_BACK_MS, easing = FastOutSlowInEasing))
+            onLanded()
+        }
+
+        val t = progress.value
+        val x = flight.from.x + (flight.to.x - flight.from.x) * t
+        val y = flight.from.y + (flight.to.y - flight.from.y) * t
+
+        PieceCanvas(
+            piece = flight.piece,
+            cell = boardCell + (flight.cell - boardCell) * t,
+            colors = colors,
+            alpha = 0.92f,
+            modifier = Modifier.offset { IntOffset(x.roundToInt(), y.roundToInt()) },
+        )
+    }
+}
+
 @Composable
 private fun Tray(
     tray: List<Piece?>,
@@ -341,6 +501,7 @@ private fun Tray(
     hiddenIndex: Int?,
     colors: BoardColors,
     isDead: (Piece) -> Boolean,
+    onSlotBounds: (Int, Rect) -> Unit,
     onDragStart: (Int, Piece, Offset) -> Unit,
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
@@ -362,7 +523,13 @@ private fun Tray(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .onGloballyPositioned { slotOrigin = it.positionInRoot() }
+                        .onGloballyPositioned {
+                            slotOrigin = it.positionInRoot()
+                            onSlotBounds(
+                                index,
+                                Rect(slotOrigin, Size(it.size.width.toFloat(), it.size.height.toFloat())),
+                            )
+                        }
                         .then(
                             if (piece != null) {
                                 Modifier.pointerInput(piece, index) {
@@ -382,21 +549,37 @@ private fun Tray(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
+                    // A slot filling up means a fresh deal, which is worth a beat of animation
+                    // so three new shapes don't just materialise. Staggered by slot to read as
+                    // a deal rather than a flicker.
+                    val entrance = remember { Animatable(0f) }
+                    LaunchedEffect(piece) {
+                        if (piece == null) {
+                            entrance.snapTo(0f)
+                        } else {
+                            delay(index * DEAL_STAGGER_MS)
+                            entrance.animateTo(
+                                targetValue = 1f,
+                                animationSpec = spring(dampingRatio = 0.52f, stiffness = Spring.StiffnessMedium),
+                            )
+                        }
+                    }
+
                     if (piece != null && index != hiddenIndex) {
-                        // Shrink to fit the slot, but never bigger than a fixed fraction of a
-                        // board cell so a 1x1 and a 5x1 stay visually consistent.
-                        val cell = min(
-                            boardCell * 0.56f,
-                            min(
-                                constraints.maxWidth.toFloat() / piece.width,
-                                constraints.maxHeight.toFloat() / piece.height,
-                            ),
+                        val cell = trayCell(
+                            piece = piece,
+                            boardCell = boardCell,
+                            slot = Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()),
                         )
+                        // The spring overshoots past 1, which is the bounce; alpha reaches full
+                        // well before then so the piece isn't still fading while it settles.
+                        val grown = entrance.value
                         PieceCanvas(
                             piece = piece,
                             cell = cell,
                             colors = colors,
-                            alpha = if (isDead(piece)) 0.3f else 1f,
+                            alpha = (if (isDead(piece)) 0.3f else 1f) * (grown / 0.6f).coerceIn(0f, 1f),
+                            modifier = Modifier.scale(0.72f + 0.28f * grown),
                         )
                     }
                 }
@@ -418,6 +601,9 @@ private fun PieceCanvas(
     val width = with(density) { (piece.width * cell).toDp() }
     val height = with(density) { (piece.height * cell).toDp() }
     val tileStyle = LocalTileStyle.current
+    val painter = rememberTilePainter(colors)
+    val fill = painter.fill(piece.colorSlot)
+    val edge = painter.edge(piece.colorSlot)
 
     Canvas(modifier.size(width, height)) {
         for (c in piece.cells) {
@@ -425,8 +611,8 @@ private fun PieceCanvas(
                 left = c.col * cell,
                 top = c.row * cell,
                 cell = cell,
-                fill = colors.tile,
-                edge = colors.tileEdge,
+                fill = fill,
+                edge = edge,
                 style = tileStyle,
                 alpha = alpha,
             )
@@ -482,6 +668,49 @@ private fun FloatingGain(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * A one-off banner for the move that overtakes your record.
+ *
+ * Sits high on the board, clear of the "+N" that floats up from the middle — the two fire on
+ * the same move, and the record falling is the bigger news of the two.
+ */
+@Composable
+private fun NewBestBanner(
+    moment: Long?,
+    boardOrigin: Offset,
+    boardCell: Float,
+    colors: BoardColors,
+) {
+    if (moment == null || boardCell <= 0f) return
+
+    key(moment) {
+        val progress = remember { Animatable(0f) }
+        LaunchedEffect(Unit) { progress.animateTo(1f, tween(durationMillis = 1600)) }
+
+        // Swells in over the first fifth, holds, then fades out over the last third.
+        val appear = (progress.value / 0.2f).coerceAtMost(1f)
+        val fade = ((progress.value - 0.66f) / 0.34f).coerceIn(0f, 1f)
+        val scale = 0.7f + 0.3f * appear
+
+        Box(Modifier.fillMaxSize()) {
+            Text(
+                text = "NEW BEST!",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+                color = colors.complete,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset {
+                        IntOffset(0, (boardOrigin.y + boardCell * Board.SIZE * 0.12f).roundToInt())
+                    }
+                    .scale(scale)
+                    .alpha(appear * (1f - fade)),
+            )
         }
     }
 }
@@ -591,11 +820,14 @@ private fun GameOverOverlay(
                     fontWeight = FontWeight.Bold,
                     color = colors.accent,
                 )
+                // best is the record this game set out to beat, so it stays a real target even
+                // after the score has passed it.
+                val beaten = score > best
                 Text(
-                    text = if (score >= best) "New best!" else "Best $best",
+                    text = if (beaten) "New best!" else "Best $best",
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.textMuted,
+                    fontWeight = if (beaten) FontWeight.Bold else FontWeight.Medium,
+                    color = if (beaten) colors.complete else colors.textMuted,
                 )
                 Spacer(Modifier.height(22.dp))
                 Button(
