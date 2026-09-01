@@ -19,6 +19,14 @@ data class Placement(
 )
 
 /**
+ * The board after a tide surge.
+ *
+ * [overflowed] means a filled cell was shoved off the top edge, which ends a Rising Tide run.
+ */
+@Immutable
+data class Surge(val board: Board, val overflowed: Boolean)
+
+/**
  * The 9x9 playing field, subdivided into nine 3x3 boxes.
  *
  * Immutable by design: every mutation returns a fresh instance, so holding one in a
@@ -98,25 +106,16 @@ class Board private constructor(private val grid: List<Int>) {
     }
 
     /**
-     * Drops [piece] at ([row], [col]) and resolves any completed rows, columns and boxes.
+     * Resolves every completed row, column and box on the board as it currently stands.
      *
-     * All completions are detected against the same post-placement board and cleared
-     * together, so a move that finishes a row and a box at once scores both.
+     * All completions are detected against the same board and cleared together, so a move
+     * that finishes a row and a box at once scores both. Separate from [place] because the
+     * tide can finish a line the player didn't, and that has to clear the same way.
      */
-    fun place(piece: Piece, row: Int, col: Int): Placement {
-        require(canPlace(piece, row, col)) { "${piece.id} does not fit at $row,$col" }
-
-        val filled = grid.toMutableList()
-        for (cell in piece.cells) {
-            filled[(row + cell.row) * SIZE + (col + cell.col)] = piece.colorSlot + 1
-        }
-        val beforeClear = Board(filled)
-
-        val fullRows = (0 until SIZE).filter { r -> (0 until SIZE).all { beforeClear.isFilled(r, it) } }
-        val fullCols = (0 until SIZE).filter { c -> (0 until SIZE).all { beforeClear.isFilled(it, c) } }
-        val fullBoxes = (0 until SIZE).filter { b ->
-            boxCells(b).all { (r, c) -> beforeClear.isFilled(r, c) }
-        }
+    fun settle(): Placement {
+        val fullRows = (0 until SIZE).filter { r -> (0 until SIZE).all { isFilled(r, it) } }
+        val fullCols = (0 until SIZE).filter { c -> (0 until SIZE).all { isFilled(it, c) } }
+        val fullBoxes = (0 until SIZE).filter { b -> boxCells(b).all { (r, c) -> isFilled(r, c) } }
 
         val cleared = buildSet {
             fullRows.forEach { r -> for (c in 0 until SIZE) add(r * SIZE + c) }
@@ -125,17 +124,58 @@ class Board private constructor(private val grid: List<Int>) {
         }
 
         val afterClear = if (cleared.isEmpty()) {
-            beforeClear
+            this
         } else {
-            Board(filled.mapIndexed { i, v -> if (i in cleared) EMPTY else v })
+            Board(grid.mapIndexed { i, v -> if (i in cleared) EMPTY else v })
         }
 
         return Placement(
-            beforeClear = beforeClear,
+            beforeClear = this,
             afterClear = afterClear,
             clearedCells = cleared,
             clearedUnits = fullRows.size + fullCols.size + fullBoxes.size,
         )
+    }
+
+    /** Drops [piece] at ([row], [col]) and resolves whatever that completes. */
+    fun place(piece: Piece, row: Int, col: Int): Placement {
+        require(canPlace(piece, row, col)) { "${piece.id} does not fit at $row,$col" }
+
+        val filled = grid.toMutableList()
+        for (cell in piece.cells) {
+            filled[(row + cell.row) * SIZE + (col + cell.col)] = piece.colorSlot + 1
+        }
+        return Board(filled).settle()
+    }
+
+    /**
+     * Shoves each column up by its entry in [pushes], filling the cells vacated at the bottom
+     * with blocks in colour slot [fillSlot].
+     *
+     * Columns move by different amounts on purpose — see [Tide]. Nothing is cleared here; the
+     * caller decides whether a surge that completes a line should pay out, and [settle] does
+     * the actual clearing.
+     */
+    fun surge(pushes: IntArray, fillSlot: Int): Surge {
+        require(pushes.size == SIZE) { "expected $SIZE pushes, got ${pushes.size}" }
+
+        val next = MutableList(SIZE * SIZE) { EMPTY }
+        var overflowed = false
+
+        for (col in 0 until SIZE) {
+            val push = pushes[col].coerceIn(0, SIZE)
+            for (row in 0 until SIZE) {
+                val value = get(row, col)
+                if (value == EMPTY) continue
+                val to = row - push
+                if (to < 0) overflowed = true else next[to * SIZE + col] = value
+            }
+            for (row in SIZE - push until SIZE) {
+                next[row * SIZE + col] = fillSlot + 1
+            }
+        }
+
+        return Surge(Board(next), overflowed)
     }
 
     companion object {

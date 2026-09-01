@@ -1,5 +1,6 @@
 package com.chrissmith.blocknine.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrissmith.blocknine.game.Board
 import com.chrissmith.blocknine.game.Cell
+import com.chrissmith.blocknine.game.GameMode
 import com.chrissmith.blocknine.game.GameViewModel
 import com.chrissmith.blocknine.game.Piece
 import com.chrissmith.blocknine.game.Scoring
@@ -88,6 +90,17 @@ private const val SNAP_BACK_MS = 200
 
 /** Gap between tray slots springing in, so a fresh deal arrives left to right. */
 private const val DEAL_STAGGER_MS = 45L
+
+/**
+ * How long the board takes to settle after a surge.
+ *
+ * Long enough to see which columns moved and by how much, short enough that you can't get a
+ * piece down during it — the shove should read as a single event, not a window to play in.
+ */
+private const val SURGE_SLIDE_MS = 260
+
+/** The waterline widget's height, as a fraction of a board cell. */
+private const val TIDE_STRIP_CELLS = 0.62f
 
 /** A piece currently under the finger. [pointer] is in root coordinates. */
 private data class DragState(val index: Int, val piece: Piece, val pointer: Offset)
@@ -131,9 +144,11 @@ fun GameScreen(
     vm: GameViewModel = viewModel(),
     leaderboard: LeaderboardViewModel = viewModel(),
     settings: SettingsViewModel = viewModel(),
+    onExit: () -> Unit = {},
 ) {
     val colors = LocalBoardColors.current
     val haptics = LocalHapticFeedback.current
+    val isTide = vm.mode == GameMode.RISING_TIDE
 
     var boardOrigin by remember { mutableStateOf(Offset.Zero) }
     var boardCell by remember { mutableFloatStateOf(0f) }
@@ -146,9 +161,27 @@ fun GameScreen(
     var showSettings by remember { mutableStateOf(false) }
     var confirmNewGame by remember { mutableStateOf(false) }
 
+    BackHandler(onBack = onExit)
+
     // A finished game is the only thing worth ranking, so submit exactly once per game over.
+    // Challenge modes are played under different rules and stay off the shared board.
     LaunchedEffect(vm.gameOver) {
-        if (vm.gameOver) leaderboard.onGameFinished(vm.score)
+        if (vm.gameOver && vm.mode == GameMode.CLASSIC) leaderboard.onGameFinished(vm.score)
+    }
+
+    // Slides the shoved columns up from where they were, so a surge reads as the board being
+    // pushed rather than the board being replaced.
+    val surgeSlide = remember { Animatable(0f) }
+    LaunchedEffect(vm.surgeMoment) {
+        if (vm.surgeMoment == null) return@LaunchedEffect
+        surgeSlide.snapTo(1f)
+        surgeSlide.animateTo(0f, tween(durationMillis = SURGE_SLIDE_MS, easing = FastOutSlowInEasing))
+    }
+
+    // One knock as the water lands. Anything it clears buzzes again off the gain below, which
+    // is the right order: you feel the shove, then you feel what it happened to finish.
+    LaunchedEffect(vm.surgeMoment) {
+        if (vm.surgeMoment != null) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     // Every placement gets a tap; a clear gets one extra per unit it took out, so a triple
@@ -164,7 +197,7 @@ fun GameScreen(
     // Abandoning a game part-way still counts — otherwise a good run thrown away by tapping
     // NEW would silently never reach the board.
     fun startNewGame() {
-        if (!vm.gameOver) leaderboard.onGameFinished(vm.score)
+        if (!vm.gameOver && vm.mode == GameMode.CLASSIC) leaderboard.onGameFinished(vm.score)
         vm.newGame()
     }
 
@@ -245,12 +278,14 @@ fun GameScreen(
                 .padding(horizontal = 16.dp)
         ) {
             Header(
+                mode = vm.mode,
                 score = vm.score,
                 best = vm.bestToBeat,
                 beatenBest = vm.beatenBest,
                 streak = vm.streak,
                 colors = colors,
                 photoUrl = leaderboard.player?.photoUrl,
+                onBack = onExit,
                 onNewGame = ::requestNewGame,
                 onLeaderboard = { showLeaderboard = true },
                 onSettings = { showSettings = true },
@@ -273,7 +308,25 @@ fun GameScreen(
                         boardOrigin = it.positionInRoot()
                         boardCell = it.size.width / Board.SIZE.toFloat()
                     },
+                surgeWave = if (isTide) vm.lastWave else null,
+                surgeProgress = { surgeSlide.value },
             )
+
+            if (isTide) {
+                Spacer(Modifier.height(6.dp))
+                TideStrip(
+                    wave = vm.pendingWave,
+                    progress = { vm.tideProgress },
+                    colors = colors,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(
+                            with(LocalDensity.current) {
+                                (boardCell * TIDE_STRIP_CELLS).coerceAtLeast(1f).toDp()
+                            }
+                        ),
+                )
+            }
 
             // Leftover height is split rather than dumped below the tray, which floats the
             // tray a little above the bottom edge the way the reference layout does.
@@ -350,17 +403,26 @@ fun GameScreen(
 
         if (vm.gameOver && !showLeaderboard && !showSettings) {
             GameOverOverlay(
+                headline = if (vm.drowned) "Under water" else "No moves left",
                 score = vm.score,
                 best = vm.bestToBeat,
                 colors = colors,
                 onPlayAgain = vm::newGame,
-                onLeaderboard = { showLeaderboard = true },
+                // A challenge score never reached the shared board, so there's nothing of
+                // this game to go and look at.
+                onLeaderboard = if (vm.mode == GameMode.CLASSIC) {
+                    { showLeaderboard = true }
+                } else {
+                    null
+                },
+                onExit = onExit,
             )
         }
 
         if (confirmNewGame) {
             ConfirmNewGameOverlay(
                 score = vm.score,
+                submits = vm.mode == GameMode.CLASSIC,
                 colors = colors,
                 onConfirm = {
                     confirmNewGame = false
@@ -391,6 +453,7 @@ fun GameScreen(
 
 @Composable
 private fun Header(
+    mode: GameMode,
     score: Int,
     /** The record as it stood when this game started, so there's a fixed target to chase. */
     best: Int,
@@ -398,6 +461,7 @@ private fun Header(
     streak: Int,
     colors: BoardColors,
     photoUrl: String?,
+    onBack: () -> Unit,
     onNewGame: () -> Unit,
     onLeaderboard: () -> Unit,
     onSettings: () -> Unit,
@@ -407,12 +471,14 @@ private fun Header(
             .fillMaxWidth()
             .padding(top = 12.dp)
     ) {
-        // Both left-hand buttons open an overlay; NEW acts on the game, so it stays apart.
+        // Back leaves the game; the other two open an overlay. NEW acts on the game itself, so
+        // it stays over on the far side, well away from anything that only looks at it.
         Row(
             modifier = Modifier.align(Alignment.CenterStart),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            BackButton(colors = colors, onClick = onBack)
             AccountButton(photoUrl = photoUrl, colors = colors, onClick = onLeaderboard)
             SettingsButton(colors = colors, onClick = onSettings)
         }
@@ -421,6 +487,16 @@ private fun Header(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Classic goes unlabelled — it's the game, and the header is crowded enough.
+            if (mode.isChallenge) {
+                Text(
+                    text = mode.title.uppercase(),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                    color = colors.accent,
+                )
+            }
             // Counted up rather than snapped, so a big clear registers as an event. A new game
             // snaps instead: watching the score wind back down to zero looks like a bug.
             val shown by animateIntAsState(
@@ -719,6 +795,8 @@ private fun NewBestBanner(
 @Composable
 private fun ConfirmNewGameOverlay(
     score: Int,
+    /** Whether this mode's scores reach the online board, which changes what's at stake. */
+    submits: Boolean,
     colors: BoardColors,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
@@ -754,7 +832,11 @@ private fun ConfirmNewGameOverlay(
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "This game ends now. Your score of $score still counts on the leaderboard.",
+                    text = if (submits) {
+                        "This game ends now. Your score of $score still counts on the leaderboard."
+                    } else {
+                        "This game ends now. Your score of $score still counts towards your record."
+                    },
                     fontSize = 13.sp,
                     color = colors.textMuted,
                     textAlign = TextAlign.Center,
@@ -779,11 +861,15 @@ private fun ConfirmNewGameOverlay(
 
 @Composable
 private fun GameOverOverlay(
+    /** Why the game ended — running out of moves and drowning deserve different words. */
+    headline: String,
     score: Int,
     best: Int,
     colors: BoardColors,
     onPlayAgain: () -> Unit,
-    onLeaderboard: () -> Unit,
+    /** Null in modes that don't submit, which hides the link rather than offering a dead end. */
+    onLeaderboard: (() -> Unit)?,
+    onExit: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -808,7 +894,7 @@ private fun GameOverOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "No moves left",
+                    text = headline,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary,
@@ -839,8 +925,13 @@ private fun GameOverOverlay(
                 ) {
                     Text("Play again", fontWeight = FontWeight.SemiBold)
                 }
-                TextButton(onClick = onLeaderboard) {
-                    Text("Leaderboard", fontSize = 13.sp, color = colors.textMuted)
+                if (onLeaderboard != null) {
+                    TextButton(onClick = onLeaderboard) {
+                        Text("Leaderboard", fontSize = 13.sp, color = colors.textMuted)
+                    }
+                }
+                TextButton(onClick = onExit) {
+                    Text("Menu", fontSize = 13.sp, color = colors.textMuted)
                 }
             }
         }

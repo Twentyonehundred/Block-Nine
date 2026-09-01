@@ -12,10 +12,19 @@ import com.chrissmith.blocknine.leaderboard.Periods
  * Separate from the Firestore leaderboard on purpose: someone who never signs in still gets
  * to track themselves. The day and month buckets use the leaderboard's own UTC keys so that
  * "today" means the same thing whichever board you are looking at.
+ *
+ * [prefix] scopes the records to one [GameMode]. Classic passes an empty prefix and so keeps
+ * the original keys, which is what stops existing installs losing their all-time best.
  */
-class PersonalBests(private val prefs: SharedPreferences) {
+class PersonalBests(private val prefs: SharedPreferences, prefix: String = "") {
 
-    var allTime by mutableIntStateOf(prefs.getInt(KEY_ALL, 0))
+    private val keyAll = prefix + KEY_ALL
+    private val keyDay = prefix + KEY_DAY
+    private val keyDayKey = prefix + KEY_DAY_KEY
+    private val keyMonth = prefix + KEY_MONTH
+    private val keyMonthKey = prefix + KEY_MONTH_KEY
+
+    var allTime by mutableIntStateOf(prefs.getInt(keyAll, 0))
         private set
 
     var day by mutableIntStateOf(0)
@@ -40,14 +49,14 @@ class PersonalBests(private val prefs: SharedPreferences) {
         val today = Periods.dayKey()
         if (today != dayKey) {
             dayKey = today
-            day = if (prefs.getString(KEY_DAY_KEY, null) == today) prefs.getInt(KEY_DAY, 0) else 0
+            day = if (prefs.getString(keyDayKey, null) == today) prefs.getInt(keyDay, 0) else 0
         }
 
         val thisMonth = Periods.monthKey()
         if (thisMonth != monthKey) {
             monthKey = thisMonth
             month =
-                if (prefs.getString(KEY_MONTH_KEY, null) == thisMonth) prefs.getInt(KEY_MONTH, 0) else 0
+                if (prefs.getString(keyMonthKey, null) == thisMonth) prefs.getInt(keyMonth, 0) else 0
         }
     }
 
@@ -57,15 +66,15 @@ class PersonalBests(private val prefs: SharedPreferences) {
         val edit = prefs.edit()
         if (score > allTime) {
             allTime = score
-            edit.putInt(KEY_ALL, score)
+            edit.putInt(keyAll, score)
         }
         if (score > day) {
             day = score
-            edit.putInt(KEY_DAY, score).putString(KEY_DAY_KEY, dayKey)
+            edit.putInt(keyDay, score).putString(keyDayKey, dayKey)
         }
         if (score > month) {
             month = score
-            edit.putInt(KEY_MONTH, score).putString(KEY_MONTH_KEY, monthKey)
+            edit.putInt(keyMonth, score).putString(keyMonthKey, monthKey)
         }
         edit.apply()
     }

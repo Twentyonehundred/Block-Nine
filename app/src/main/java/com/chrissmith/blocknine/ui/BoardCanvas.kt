@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -17,6 +18,55 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import com.chrissmith.blocknine.game.Board
 import com.chrissmith.blocknine.game.Cell
+import com.chrissmith.blocknine.game.Tide
+
+/**
+ * The waterline under the board in Rising Tide: one bar per column, as wide as the column it
+ * threatens and as tall as the shove it's about to deliver.
+ *
+ * Doing both jobs in one widget is the point. The shape of the bars says *where* the next
+ * surge lands and how unevenly, which is what you plan around; the way they swell and darken
+ * as [progress] runs to 1 says *how soon*. Splitting that into a separate indicator would mean
+ * reading two things to plan one move.
+ */
+@Composable
+fun TideStrip(
+    wave: IntArray,
+    progress: () -> Float,
+    colors: BoardColors,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier.clipToBounds()) {
+        val column = size.width / Board.SIZE
+        val inset = column * 0.06f
+
+        // A still waterline the whole way across, so the strip reads as a thing that's always
+        // there rather than something that appears when the bars do.
+        drawRect(
+            color = colors.tideEdge.copy(alpha = 0.22f),
+            topLeft = Offset(0f, size.height - size.height * 0.12f),
+            size = Size(size.width, size.height * 0.12f),
+        )
+
+        if (wave.isEmpty()) return@Canvas
+
+        val swell = progress().coerceIn(0f, 1f)
+        for (col in 0 until Board.SIZE) {
+            val push = wave.getOrElse(col) { 0 }
+            if (push <= 0) continue
+
+            // Full height would mean a maximum push exactly fills the strip. Bars start at
+            // just over half and rise the rest of the way as the clock runs down.
+            val share = push.toFloat() / Tide.MAX_PUSH
+            val height = size.height * share * (0.55f + 0.45f * swell)
+            drawRect(
+                color = colors.tideTile.copy(alpha = 0.35f + 0.6f * swell),
+                topLeft = Offset(col * column + inset, size.height - height),
+                size = Size(column - inset * 2f, height),
+            )
+        }
+    }
+}
 
 /**
  * Draws one tile within the cell whose top-left is ([left], [top]).
@@ -76,6 +126,13 @@ fun BoardCanvas(
     completing: Set<Int>,
     colors: BoardColors,
     modifier: Modifier = Modifier,
+    /** Per-column push of the surge being animated, or null when nothing is sliding. */
+    surgeWave: IntArray? = null,
+    /**
+     * How much of that slide is left, 1 down to 0. Read in the draw scope rather than taken as
+     * a value so the animation repaints without recomposing the whole screen behind it.
+     */
+    surgeProgress: () -> Float = { 0f },
 ) {
     // Runs 0 -> 1 whenever a new set of cells starts clearing.
     val flash = remember { Animatable(0f) }
@@ -91,10 +148,18 @@ fun BoardCanvas(
     val tileStyle = LocalTileStyle.current
     val painter = rememberTilePainter(colors)
 
-    Canvas(modifier) {
+    // Tiles mid-slide start below the board's own bottom edge, which would otherwise paint
+    // straight over the tray.
+    Canvas(modifier.clipToBounds()) {
         val cell = size.width / Board.SIZE
         val hairline = (cell * 0.02f).coerceAtLeast(1f)
         val boxLine = (cell * 0.045f).coerceAtLeast(2f)
+
+        // Where a column is drawn relative to where it belongs, while a surge slides home.
+        val slide = surgeProgress()
+        fun lift(col: Int): Float =
+            if (surgeWave == null || slide <= 0f) 0f
+            else (surgeWave.getOrElse(col) { 0 }) * cell * slide
 
         // Alternating 3x3 box backgrounds, matching the sudoku-style checker in the reference.
         for (box in 0 until Board.SIZE) {
@@ -158,7 +223,7 @@ fun BoardCanvas(
                 val tint = painter.fill(slot)
                 drawTile(
                     left = col * cell,
-                    top = row * cell,
+                    top = row * cell + lift(col),
                     cell = cell,
                     fill = if (progress > 0f) lerp(tint, Color.White, progress) else tint,
                     edge = if (progress > 0f) null else painter.edge(slot),

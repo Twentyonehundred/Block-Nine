@@ -10,6 +10,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.chrissmith.blocknine.game.Pieces
 
 /**
  * Board palette. Held separately from the Material scheme because the grid needs a few
@@ -30,6 +31,12 @@ data class BoardColors(
      * Tuned per theme so the set still belongs on that sheet; [tile] is always the first.
      */
     val tilePalette: List<Color>,
+    /**
+     * Blocks the Rising Tide pushes in. Deliberately drab next to every piece colour, so a
+     * glance at the board tells you what you put there and what the water did.
+     */
+    val tideTile: Color,
+    val tideEdge: Color,
     val ghost: Color,
     val invalid: Color,
     /** Marks a row, column or box the pending drop would complete. Reads against [invalid]. */
@@ -80,6 +87,8 @@ private val ClassicBoard = BoardColors(
         Color(0xFF9B5DE5), // violet
         Color(0xFF10B4C4), // teal
     ),
+    tideTile = Color(0xFF8FA6BC),
+    tideEdge = Color(0xFF5A7089),
     ghost = Color(0xFF2F7DF6),
     invalid = Color(0xFFEF4444),
     complete = Color(0xFF16A34A),
@@ -105,6 +114,8 @@ private val WarmBoard = BoardColors(
         Color(0xFF8A6BAE), // mauve
         Color(0xFF3F8C8C), // slate teal
     ),
+    tideTile = Color(0xFFB3A491),
+    tideEdge = Color(0xFF80705C),
     ghost = Color(0xFFE8833A),
     invalid = Color(0xFFD94F4F),
     complete = Color(0xFF4F8F3A),
@@ -129,6 +140,8 @@ private val DarkBoard = BoardColors(
         Color(0xFFA78BFA), // lilac
         Color(0xFF22D3EE), // cyan
     ),
+    tideTile = Color(0xFF52657F),
+    tideEdge = Color(0xFF33445C),
     ghost = Color(0xFF60A5FA),
     invalid = Color(0xFFEF4444),
     complete = Color(0xFF22C55E),
@@ -168,8 +181,13 @@ val LocalTileColour = staticCompositionLocalOf { TileColour.VARIED }
 @Immutable
 class TilePainter(private val colors: BoardColors, private val varied: Boolean) {
 
-    fun fill(slot: Int): Color =
-        if (varied) colors.tilePalette[slot.mod(colors.tilePalette.size)] else colors.tile
+    fun fill(slot: Int): Color = when {
+        // Slots past the piece palette belong to the tide, which stays drab whatever the
+        // colour setting says — it isn't the player's block and shouldn't look like one.
+        slot >= Pieces.COLOUR_SLOTS -> colors.tideTile
+        varied -> colors.tilePalette[slot.mod(colors.tilePalette.size)]
+        else -> colors.tile
+    }
 
     /** The drop preview's colour: the shape's own when multicoloured, else the theme's ghost. */
     fun ghost(slot: Int): Color = if (varied) fill(slot) else colors.ghost
@@ -178,10 +196,13 @@ class TilePainter(private val colors: BoardColors, private val varied: Boolean) 
      * A darker relative of the fill, so a multicoloured tile is outlined in its own colour
      * rather than the one edge tone that only suits [BoardColors.tile].
      */
-    fun edge(slot: Int): Color {
-        if (!varied) return colors.tileEdge
-        val fill = fill(slot)
-        return Color(fill.red * EDGE_SHADE, fill.green * EDGE_SHADE, fill.blue * EDGE_SHADE, fill.alpha)
+    fun edge(slot: Int): Color = when {
+        slot >= Pieces.COLOUR_SLOTS -> colors.tideEdge
+        !varied -> colors.tileEdge
+        else -> {
+            val fill = fill(slot)
+            Color(fill.red * EDGE_SHADE, fill.green * EDGE_SHADE, fill.blue * EDGE_SHADE, fill.alpha)
+        }
     }
 
     private companion object {

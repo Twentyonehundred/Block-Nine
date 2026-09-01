@@ -5,8 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.chrissmith.blocknine.ui.BlockNineApp
 import com.chrissmith.blocknine.ui.BlockNineTheme
-import com.chrissmith.blocknine.ui.GameScreen
 import com.chrissmith.blocknine.ui.SettingsViewModel
 
 class MainActivity : ComponentActivity() {
@@ -14,7 +14,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // Hoisted above the theme rather than left inside GameScreen: the palette and the
+            // Hoisted above the theme rather than left inside the screens: the palette and the
             // tile style are what BlockNineTheme provides, so it has to be told them here.
             val settings: SettingsViewModel = viewModel()
             BlockNineTheme(
@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
                 tileStyle = settings.tileStyle,
                 tileColour = settings.tileColour,
             ) {
-                GameScreen(settings = settings)
+                BlockNineApp(settings = settings)
             }
         }
     }

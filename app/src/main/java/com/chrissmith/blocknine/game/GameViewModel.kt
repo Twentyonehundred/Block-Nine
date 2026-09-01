@@ -7,14 +7,17 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** A transient "+N" award, shown floating over the board. [id] makes repeats re-animate. */
 data class Gain(val id: Long, val points: Int, val clearedUnits: Int, val streak: Int)
 
-class GameViewModel(app: Application) : AndroidViewModel(app) {
+class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -28,10 +31,11 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     var score by mutableIntStateOf(0)
         private set
 
-    /** This device's records for today, this month and all time. */
-    val bests = PersonalBests(prefs)
+    /** This device's records for today, this month and all time, scoped to [mode]. */
+    val bests = PersonalBests(prefs, mode.prefsPrefix)
 
-    private val save = GameSave(prefs)
+    /** Only modes worth resuming get a save file; a timed run isn't one. */
+    private val save = if (mode.isResumable) GameSave(prefs) else null
 
     /**
      * The all-time record as it stood when this game began.
@@ -56,6 +60,10 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     var gameOver by mutableStateOf(false)
         private set
 
+    /** True when the game ended because the tide pushed a block off the top, not for want of moves. */
+    var drowned by mutableStateOf(false)
+        private set
+
     /** Cells mid-clear. The board still shows them filled so they can flash before vanishing. */
     var clearing by mutableStateOf<Set<Int>>(emptySet())
         private set
@@ -65,13 +73,37 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     private var gainCounter = 0L
 
+    // ---- Rising Tide ----------------------------------------------------------------------
+
+    /** What each column will be pushed by at the next surge. Decided as soon as the last one lands. */
+    var pendingWave by mutableStateOf(IntArray(0))
+        private set
+
+    /** The wave that has just fired, so the board can animate the shove it caused. */
+    var lastWave by mutableStateOf(IntArray(0))
+        private set
+
+    /** Pieces still to play before the water comes in. */
+    var piecesUntilSurge by mutableIntStateOf(0)
+        private set
+
+    /** 0 just after a surge, 1 once the very next piece will bring it in. */
+    val tideProgress: Float
+        get() = 1f - (piecesUntilSurge - 1).toFloat() / (Tide.PIECES_PER_SURGE - 1)
+
+    /** Bumped on every surge. Keys the shove animation. */
+    var surgeMoment by mutableStateOf<Long?>(null)
+        private set
+
+    private var surgeCount = 0
+
     init {
-        resume()
+        if (mode.isResumable) resume() else newGame()
     }
 
     /** Picks up the saved game if there is one, otherwise starts a fresh one. */
     private fun resume() {
-        val snapshot = save.read()
+        val snapshot = save?.read()
         if (snapshot == null) {
             newGame()
             return
@@ -86,6 +118,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         clearing = emptySet()
         gain = null
         newBestMoment = null
+        drowned = false
         gameOver = tray.filterNotNull().none { board.hasAnyPlacement(it) }
 
         // Finished games aren't saved, so this shouldn't happen — but a dead board with no way
@@ -102,9 +135,11 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         bestToBeat = bests.allTime
         newBestMoment = null
         gameOver = false
+        drowned = false
         clearing = emptySet()
         gain = null
-        save.write(board, tray, score, streak, bestToBeat)
+        save?.write(board, tray, score, streak, bestToBeat)
+        if (mode == GameMode.RISING_TIDE) armTide()
     }
 
     /** True if the piece in [index] can legally land with its top-left corner at ([row], [col]). */
@@ -135,29 +170,54 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
         val placement = board.place(piece, row, col)
         streak = if (placement.clearedUnits > 0) streak + 1 else 0
+        award(Scoring.points(piece.size, placement.clearedUnits, streak), placement.clearedUnits, streak)
 
-        val points = Scoring.points(piece.size, placement.clearedUnits, streak)
+        tray = tray.toMutableList().also { it[index] = null }
+        resolve(placement) { endTurn() }
+    }
+
+    /** Files points against the score and fires the floating "+N", plus the record moment if it falls. */
+    private fun award(points: Int, clearedUnits: Int, streak: Int) {
         val wasBehind = !beatenBest
         score += points
         bests.record(score)
-        gain = Gain(gainCounter++, points, placement.clearedUnits, streak)
+        gain = Gain(gainCounter++, points, clearedUnits, streak)
         if (wasBehind && beatenBest) newBestMoment = gainCounter++
+    }
 
-        tray = tray.toMutableList().also { it[index] = null }
-
+    /**
+     * Commits a placement to the board, holding the completed lines onscreen for a beat first
+     * so they can be seen going. [then] runs once the board has settled.
+     */
+    private fun resolve(placement: Placement, then: () -> Unit) {
         if (placement.clearedCells.isEmpty()) {
             board = placement.afterClear
-            advanceTurn()
+            then()
+            return
+        }
+
+        board = placement.beforeClear
+        clearing = placement.clearedCells
+        viewModelScope.launch {
+            delay(CLEAR_FLASH_MS)
+            board = placement.afterClear
+            clearing = emptySet()
+            then()
+        }
+    }
+
+    /**
+     * Closes out a move: lets the tide in if this piece was the one that called it, then
+     * refills and works out whether the game can go on.
+     *
+     * The surge happens before the refill so that the next three pieces are dealt against the
+     * board you'll actually be playing on, rather than the one the water is about to rearrange.
+     */
+    private fun endTurn() {
+        if (mode == GameMode.RISING_TIDE && --piecesUntilSurge <= 0) {
+            surge { restock() }
         } else {
-            // Show the completed lines for a beat, then settle the board.
-            board = placement.beforeClear
-            clearing = placement.clearedCells
-            viewModelScope.launch {
-                delay(CLEAR_FLASH_MS)
-                board = placement.afterClear
-                clearing = emptySet()
-                advanceTurn()
-            }
+            restock()
         }
     }
 
@@ -169,19 +229,76 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
      * settled: the ~200ms flash before the cells vanish is the one window where a save would
      * capture a board that's about to change.
      */
-    private fun advanceTurn() {
+    private fun restock() {
         if (tray.all { it == null }) {
             tray = Pieces.dealTray(board)
         }
-        gameOver = tray.filterNotNull().none { board.hasAnyPlacement(it) }
+        checkAlive()
 
         // A finished game has already been counted towards the records, so there is nothing
         // left to resume — dropping it means the next launch deals a fresh board.
-        if (gameOver) save.clear() else save.write(board, tray, score, streak, bestToBeat)
+        if (!gameOver) save?.write(board, tray, score, streak, bestToBeat)
     }
 
-    private companion object {
+    private fun checkAlive() {
+        gameOver = tray.filterNotNull().none { board.hasAnyPlacement(it) }
+        if (gameOver) save?.clear()
+    }
+
+    /**
+     * Sets up the first wave.
+     *
+     * The wave is settled a full tray before it lands so it can be shown coming: being shoved
+     * is fair, being shoved by surprise is not.
+     */
+    private fun armTide() {
+        surgeCount = 0
+        surgeMoment = null
+        lastWave = IntArray(0)
+        pendingWave = Tide.wave(0)
+        piecesUntilSurge = Tide.PIECES_PER_SURGE
+    }
+
+    /**
+     * Lets the water in, then runs [then] once the board has finished moving.
+     *
+     * A surge can finish rows the player never touched. Those clear and pay out, because
+     * refusing to score them would mean watching a completed row sit there; they don't feed
+     * the combo streak though, which stays a record of the player's own consecutive clears.
+     */
+    private fun surge(then: () -> Unit) {
+        val wave = pendingWave
+        val result = board.surge(wave, Pieces.COLOUR_SLOTS)
+
+        surgeCount++
+        lastWave = wave
+        pendingWave = Tide.wave(surgeCount)
+        piecesUntilSurge = Tide.PIECES_PER_SURGE
+        surgeMoment = gainCounter++
+
+        if (result.overflowed) {
+            board = result.board
+            drowned = true
+            gameOver = true
+            return
+        }
+
+        val settled = result.board.settle()
+        if (settled.clearedUnits > 0) {
+            award(Scoring.points(0, settled.clearedUnits, 0), settled.clearedUnits, 0)
+        }
+        resolve(settled, then)
+    }
+
+    companion object {
+        /** Shared with anything that needs to read a record without starting a game. */
         const val PREFS = "block_nine"
-        const val CLEAR_FLASH_MS = 190L
+
+        private const val CLEAR_FLASH_MS = 190L
+
+        /** Builds a view model for one [mode]; pair with a `viewModel(key = mode.name, ...)`. */
+        fun factory(mode: GameMode) = viewModelFactory {
+            initializer { GameViewModel(this[APPLICATION_KEY] as Application, mode) }
+        }
     }
 }
