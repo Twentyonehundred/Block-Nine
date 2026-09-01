@@ -195,7 +195,7 @@ class TideTest {
 
         val result = board.surge(intArrayOf(2, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
 
-        assertFalse("a board with this much room should not drown", result.overflowed)
+        assertFalse("a board with this much room should not overflow", result.overflowed)
         assertTrue("the block on the floor rode the water up", result.board.isFilled(6, 0))
         assertTrue("nothing reached the block halfway up", result.board.isFilled(2, 0))
         assertTrue("nothing reached the block at the top", result.board.isFilled(0, 0))
@@ -251,7 +251,7 @@ class TideTest {
     }
 
     @Test
-    fun `pushing a standing stack off the top is a drowning`() {
+    fun `a column with no slack crushes its top block off the board`() {
         val board = Board.of(
             "#........",
             "#........",
@@ -267,6 +267,35 @@ class TideTest {
         val result = board.surge(intArrayOf(1, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
 
         assertTrue(result.overflowed)
+    }
+
+    @Test
+    fun `a crushed column is left complete so it clears`() {
+        // The point of the crush not being fatal. Reaching over the top edge takes a column
+        // packed to all nine rows, and nine rows is a completed column, so the surge that
+        // destroys a block is the same surge that pays out for the line it finished.
+        val board = Board.of(
+            ".........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+        )
+
+        val result = board.surge(intArrayOf(2, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertTrue("a full column and a push of two should reach over the edge", result.overflowed)
+        for (row in 0 until Board.SIZE) {
+            assertTrue("row $row of the crushed column should be filled", result.board.isFilled(row, 0))
+        }
+
+        val settled = result.board.settle()
+        assertEquals("the crushed column should have cleared", 1, settled.clearedUnits)
+        for (row in 0 until Board.SIZE) assertFalse(settled.afterClear.isFilled(row, 0))
     }
 
     @Test

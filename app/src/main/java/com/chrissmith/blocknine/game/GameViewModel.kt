@@ -60,10 +60,6 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
     var gameOver by mutableStateOf(false)
         private set
 
-    /** True when the game ended because the tide pushed a block off the top, not for want of moves. */
-    var drowned by mutableStateOf(false)
-        private set
-
     /** Cells mid-clear. The board still shows them filled so they can flash before vanishing. */
     var clearing by mutableStateOf<Set<Int>>(emptySet())
         private set
@@ -121,7 +117,6 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         clearing = emptySet()
         gain = null
         newBestMoment = null
-        drowned = false
         gameOver = tray.filterNotNull().none { board.hasAnyPlacement(it) }
 
         // Finished games aren't saved, so this shouldn't happen — but a dead board with no way
@@ -138,7 +133,6 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         bestToBeat = bests.allTime
         newBestMoment = null
         gameOver = false
-        drowned = false
         clearing = emptySet()
         gain = null
         save?.write(board, tray, score, streak, bestToBeat)
@@ -268,6 +262,11 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
      * A surge can finish rows the player never touched. Those clear and pay out, because
      * refusing to score them would mean watching a completed row sit there; they don't feed
      * the combo streak though, which stays a record of the player's own consecutive clears.
+     *
+     * The water can also crush a block off the top edge, but that is never itself the end of a
+     * run. A column only has the reach to eject anything once it has filled all nine rows, and
+     * a filled column clears — so the crush is the toll for a line, not a death. What finishes
+     * a Rising Tide game is the same thing that finishes a classic one: nothing fits any more.
      */
     private fun surge(then: () -> Unit) {
         val result = board.surge(pendingWave, Pieces.COLOUR_SLOTS)
@@ -277,13 +276,6 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         pendingWave = Tide.wave(surgeCount)
         piecesUntilSurge = Tide.PIECES_PER_SURGE
         surgeMoment = gainCounter++
-
-        if (result.overflowed) {
-            board = result.board
-            drowned = true
-            gameOver = true
-            return
-        }
 
         val settled = result.board.settle()
         if (settled.clearedUnits > 0) {

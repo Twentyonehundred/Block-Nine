@@ -36,8 +36,10 @@ enum class GameMode(
             "bending whatever you've built out of line. The bar under the board shows where " +
             "it's coming and how hard.\n\nThe water only moves what's directly in its way, one " +
             "column at a time. A block with air beneath it stays put and the water rises past " +
-            "underneath, so gaps soak up the push. Let a column pack solid from the floor to " +
-            "the ceiling and the next surge shoves a block off the top — that's the end of it.",
+            "underneath, so gaps soak up the push.\n\nA column squashed solid from floor to " +
+            "ceiling clears like any other, even if the water had to crush a block off the top " +
+            "to fill it. The run ends the same way a classic one does: when none of your three " +
+            "pieces will fit.",
         prefsPrefix = "tide_",
         collection = "tidePlayers",
         shortTitle = "Tide",

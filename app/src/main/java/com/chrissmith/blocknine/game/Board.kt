@@ -21,7 +21,11 @@ data class Placement(
 /**
  * The board after a tide surge.
  *
- * [overflowed] means a filled cell was shoved off the top edge, which ends a Rising Tide run.
+ * [overflowed] means a filled cell was shoved off the top edge and destroyed. It takes a column
+ * packed to all nine rows to reach that far, and a packed column clears, so this is the toll for
+ * a line rather than a losing condition — it's reported because the physics knows it, not
+ * because anything ends on it.
+ *
  * [lift] says, for every cell of the new board, how many rows it travelled to get there, so the
  * animation can slide exactly what moved and leave everything else alone.
  */
@@ -173,8 +177,9 @@ class Board private constructor(private val grid: List<Int>) {
      *
      * The consequence worth knowing is that slack in a column absorbs the push. Two blocks with
      * a gap between them close up before either of them travels, which is what stops a surge
-     * ejecting a block off the top of a board that plainly still has room in it. You drown when
-     * a column has no slack left at all.
+     * ejecting a block off the top of a board that plainly still has room in it. Only a column
+     * with no slack left at all can push anything over the edge, and by then it is nine rows
+     * full and about to clear — see [Surge].
      *
      * Columns move by different amounts on purpose, so a run lying across an uneven wave shears
      * rather than lifting flat — see [Tide]. Contact is column-local: a block hanging off the

@@ -407,7 +407,7 @@ fun GameScreen(
 
         if (vm.gameOver && !showLeaderboard && !showSettings) {
             GameOverOverlay(
-                headline = if (vm.drowned) "Under water" else "No moves left",
+                headline = "No moves left",
                 score = vm.score,
                 best = vm.bestToBeat,
                 colors = colors,
@@ -853,7 +853,7 @@ private fun ConfirmNewGameOverlay(
 
 @Composable
 private fun GameOverOverlay(
-    /** Why the game ended — running out of moves and drowning deserve different words. */
+    /** Why the game ended. */
     headline: String,
     score: Int,
     best: Int,
