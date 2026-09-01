@@ -152,9 +152,10 @@ class TideTest {
     }
 
     @Test
-    fun `contact carries sideways but not diagonally`() {
-        // Column 1 is empty at the floor. Its block only rides up because it is joined edge to
-        // edge to the stack in column 0; the block in column 3 is only touching corners.
+    fun `a block hanging off the side of a rising stack is left behind`() {
+        // Contact is column-local. Column 0 is packed to the floor so the water carries it;
+        // column 1's block has air beneath it, so the water goes under rather than dragging it
+        // along with its neighbour.
         val board = Board.of(
             ".........",
             ".........",
@@ -163,15 +164,65 @@ class TideTest {
             ".........",
             ".........",
             ".........",
-            "##.#.....",
-            "#.#......",
+            "##.......",
+            "#........",
         )
 
-        val result = board.surge(intArrayOf(0, 1, 0, 1, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+        val result = board.surge(intArrayOf(1, 1, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
 
         assertFalse(result.overflowed)
-        assertTrue("a sideways-joined block should ride up", result.board.isFilled(6, 1))
-        assertTrue("a diagonally-joined block should not move", result.board.isFilled(7, 3))
+        assertTrue("the stack on the floor should have risen", result.board.isFilled(6, 0))
+        assertTrue(result.board.isFilled(7, 0))
+        assertTrue("the neighbour should not have been dragged up", result.board.isFilled(7, 1))
+        assertEquals(Pieces.COLOUR_SLOTS, result.board.colorSlotAt(8, 1))
+    }
+
+    @Test
+    fun `slack in a column absorbs the push instead of ejecting the top block`() {
+        // The complaint this model replaced: a block at the top used to be dragged up by the
+        // full push and off the board, even with rows of clear air between it and the water.
+        val board = Board.of(
+            "#........",
+            ".........",
+            "#........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            "#........",
+        )
+
+        val result = board.surge(intArrayOf(2, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertFalse("a board with this much room should not drown", result.overflowed)
+        assertTrue("the block on the floor rode the water up", result.board.isFilled(6, 0))
+        assertTrue("nothing reached the block halfway up", result.board.isFilled(2, 0))
+        assertTrue("nothing reached the block at the top", result.board.isFilled(0, 0))
+    }
+
+    @Test
+    fun `one empty row is enough to survive a surge`() {
+        // The counterpart to drowning. The column is otherwise packed floor to ceiling, and the
+        // single gap is all the slack the push needs — so the gap closes and the top stays.
+        val board = Board.of(
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            ".........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+        )
+
+        val result = board.surge(intArrayOf(1, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertFalse("the empty row should have taken the push", result.overflowed)
+        assertEquals("nothing above the gap should have moved", 0, result.liftAt(3, 0))
+        assertEquals("the block under the gap rose into it", 1, result.liftAt(4, 0))
+        assertEquals(Pieces.COLOUR_SLOTS, result.board.colorSlotAt(8, 0))
     }
 
     @Test

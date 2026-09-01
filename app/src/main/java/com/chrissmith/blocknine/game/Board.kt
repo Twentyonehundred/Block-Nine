@@ -164,54 +164,21 @@ class Board private constructor(private val grid: List<Int>) {
     }
 
     /**
-     * Every filled cell joined edge to edge, through other filled cells, to something standing
-     * on the floor. Diagonal touches don't count.
-     *
-     * This is what the tide can get hold of. Water rising up a column shoves the mass that
-     * reaches the bottom of the board; anything hanging in the air above a gap is not part of
-     * that mass and the water goes straight past underneath it.
-     */
-    private fun grounded(): BooleanArray {
-        val grounded = BooleanArray(SIZE * SIZE)
-        val pending = ArrayDeque<Int>()
-
-        for (col in 0 until SIZE) {
-            val index = (SIZE - 1) * SIZE + col
-            if (grid[index] != EMPTY) {
-                grounded[index] = true
-                pending.addLast(index)
-            }
-        }
-
-        while (pending.isNotEmpty()) {
-            val index = pending.removeLast()
-            val row = index / SIZE
-            val col = index % SIZE
-            for ((r, c) in NEIGHBOURS) {
-                val nr = row + r
-                val nc = col + c
-                if (nr !in 0 until SIZE || nc !in 0 until SIZE) continue
-                val neighbour = nr * SIZE + nc
-                if (grounded[neighbour] || grid[neighbour] == EMPTY) continue
-                grounded[neighbour] = true
-                pending.addLast(neighbour)
-            }
-        }
-
-        return grounded
-    }
-
-    /**
      * Lets the water in, [pushes] rows deep per column, as blocks in colour slot [fillSlot].
      *
-     * The water only carries what it is actually touching. A cell rides up its column's push if
-     * it belongs to the mass standing on the floor (see [grounded]) — which reaches sideways as
-     * well as straight down, so a block hanging off the side of a stack goes up with it. A block
-     * with nothing but air beneath it stays exactly where it is and the water fills in below.
+     * The water is a piston, one per column, and it only moves what is genuinely in its way.
+     * Walk a column up from the floor: a block shifts only when something has come up into its
+     * square, and then only as far as it is shoved. A block with air beneath it is in nobody's
+     * way, so it stays exactly where it is and the water rises past underneath it.
      *
-     * Columns still move by different amounts on purpose, so a run spanning an uneven wave
-     * shears rather than lifting flat — see [Tide]. What a floating block can't do is dodge:
-     * anything the rising mass would land on gets shunted along ahead of it.
+     * The consequence worth knowing is that slack in a column absorbs the push. Two blocks with
+     * a gap between them close up before either of them travels, which is what stops a surge
+     * ejecting a block off the top of a board that plainly still has room in it. You drown when
+     * a column has no slack left at all.
+     *
+     * Columns move by different amounts on purpose, so a run lying across an uneven wave shears
+     * rather than lifting flat — see [Tide]. Contact is column-local: a block hanging off the
+     * side of a rising stack isn't being pushed by it, and gets left behind as it slides past.
      *
      * Nothing is cleared here; the caller decides whether a surge that completes a line should
      * pay out, and [settle] does the actual clearing.
@@ -219,7 +186,6 @@ class Board private constructor(private val grid: List<Int>) {
     fun surge(pushes: IntArray, fillSlot: Int): Surge {
         require(pushes.size == SIZE) { "expected $SIZE pushes, got ${pushes.size}" }
 
-        val grounded = grounded()
         val next = MutableList(SIZE * SIZE) { EMPTY }
         val lift = IntArray(SIZE * SIZE)
         var overflowed = false
@@ -228,15 +194,16 @@ class Board private constructor(private val grid: List<Int>) {
             val push = pushes[col].coerceIn(0, SIZE)
 
             // The lowest row still free above everything already placed in this column. Starts
-            // just above the water, and walks up as the column is rebuilt from the bottom.
+            // at the top of the water, and walks up as the column is rebuilt from the floor.
             var free = SIZE - 1 - push
 
             for (row in SIZE - 1 downTo 0) {
                 val value = get(row, col)
                 if (value == EMPTY) continue
 
-                val wanted = if (grounded[row * SIZE + col]) row - push else row
-                val to = minOf(wanted, free)
+                // Stay put unless the space has been taken, then ride only as high as it takes
+                // to get out of the way. This is where a gap lower down soaks up the push.
+                val to = minOf(row, free)
                 free = to - 1
 
                 if (to < 0) {
@@ -264,9 +231,6 @@ class Board private constructor(private val grid: List<Int>) {
         const val FILLED = 1
 
         private const val EMPTY_CHAR = '.'
-
-        /** The four cells that count as touching. Diagonals are deliberately absent. */
-        private val NEIGHBOURS = listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
 
         fun empty(): Board = Board(List(SIZE * SIZE) { EMPTY })
 

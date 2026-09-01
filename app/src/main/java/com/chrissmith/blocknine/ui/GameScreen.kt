@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -101,6 +102,9 @@ private const val SURGE_SLIDE_MS = 260
 
 /** The waterline widget's height, as a fraction of a board cell. */
 private const val TIDE_STRIP_CELLS = 0.62f
+
+/** How long the game-over panel takes to get out of the way of the final board. */
+private const val PEEK_MS = 160
 
 /** A piece currently under the finger. [pointer] is in root coordinates. */
 private data class DragState(val index: Int, val piece: Piece, val pointer: Offset)
@@ -858,20 +862,51 @@ private fun GameOverOverlay(
     onLeaderboard: () -> Unit,
     onExit: () -> Unit,
 ) {
+    // Tapping the scrim slides the panel out of the way so the board that killed you can
+    // actually be read. The tap-catcher stays put either way — the game is over, so nothing
+    // underneath should respond to a touch — and tapping again brings the panel back.
+    var peeking by remember { mutableStateOf(false) }
+    val cover by animateFloatAsState(
+        targetValue = if (peeking) 0f else 1f,
+        animationSpec = tween(PEEK_MS),
+        label = "gameOverCover",
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
-            // Swallow taps so nothing underneath reacts while the dialog is up.
+            .background(Color.Black.copy(alpha = 0.55f * cover))
             .selectable(
-                selected = false,
+                selected = peeking,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = {},
+                onClick = { peeking = !peeking },
             ),
         contentAlignment = Alignment.Center,
     ) {
+        // A reminder of where the score went, and of the way back, while the panel is hidden.
         Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 28.dp)
+                .alpha(1f - cover),
+            shape = RoundedCornerShape(20.dp),
+            color = colors.screen,
+            shadowElevation = 8.dp,
+        ) {
+            Text(
+                text = "$headline · $score  —  tap to show",
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = colors.textMuted,
+            )
+        }
+
+        if (cover <= 0f) return@Box
+
+        Surface(
+            modifier = Modifier.alpha(cover),
             shape = RoundedCornerShape(24.dp),
             color = colors.screen,
             shadowElevation = 16.dp,
@@ -918,6 +953,12 @@ private fun GameOverOverlay(
                 TextButton(onClick = onExit) {
                     Text("Menu", fontSize = 13.sp, color = colors.textMuted)
                 }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Tap outside to see the board",
+                    fontSize = 11.sp,
+                    color = colors.textMuted.copy(alpha = 0.7f),
+                )
             }
         }
     }

@@ -34,10 +34,10 @@ enum class GameMode(
         blurb = "The water surges in from below and shoves your board out of shape.",
         rules = "Every three pieces the tide pushes a few columns up by different amounts, " +
             "bending whatever you've built out of line. The bar under the board shows where " +
-            "it's coming and how hard.\n\nThe water only carries what it's touching. Clear a " +
-            "row and everything resting on it comes loose — the tide can't move it again " +
-            "until the water climbs back up to it. Let it push a block off the top and " +
-            "you're done.",
+            "it's coming and how hard.\n\nThe water only moves what's directly in its way, one " +
+            "column at a time. A block with air beneath it stays put and the water rises past " +
+            "underneath, so gaps soak up the push. Let a column pack solid from the floor to " +
+            "the ceiling and the next surge shoves a block off the top — that's the end of it.",
         prefsPrefix = "tide_",
         collection = "tidePlayers",
         shortTitle = "Tide",
