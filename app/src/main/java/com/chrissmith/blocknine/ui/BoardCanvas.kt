@@ -127,16 +127,17 @@ fun BoardCanvas(
     colors: BoardColors,
     modifier: Modifier = Modifier,
     /**
-     * How far each cell of [board] rose in the surge being animated, or null when nothing is
-     * sliding. Per cell rather than per column because the tide only moves what it touches, so
-     * a pushed column can hold blocks that didn't budge.
+     * How far each cell of [board] travelled to get where it is, signed: positive for a tile
+     * shoved up by the tide, negative for one that fell in a collapse. Empty when nothing has
+     * moved. Per cell rather than per column, since neither force moves a column as one.
      */
-    surgeLift: IntArray? = null,
+    shift: IntArray? = null,
     /**
-     * How much of that slide is left, 1 down to 0. Read in the draw scope rather than taken as
-     * a value so the animation repaints without recomposing the whole screen behind it.
+     * How much of that movement is still to play out, 1 down to 0. Read in the draw scope
+     * rather than taken as a value so the animation repaints without recomposing the whole
+     * screen behind it.
      */
-    surgeProgress: () -> Float = { 0f },
+    shiftProgress: () -> Float = { 0f },
 ) {
     // Runs 0 -> 1 whenever a new set of cells starts clearing.
     val flash = remember { Animatable(0f) }
@@ -152,18 +153,19 @@ fun BoardCanvas(
     val tileStyle = LocalTileStyle.current
     val painter = rememberTilePainter(colors)
 
-    // Tiles mid-slide start below the board's own bottom edge, which would otherwise paint
-    // straight over the tray.
+    // Tiles mid-slide start beyond the board's own edges, which would otherwise paint straight
+    // over the tray below or the score above.
     Canvas(modifier.clipToBounds()) {
         val cell = size.width / Board.SIZE
         val hairline = (cell * 0.02f).coerceAtLeast(1f)
         val boxLine = (cell * 0.045f).coerceAtLeast(2f)
 
-        // Where a tile is drawn relative to where it belongs, while a surge slides home.
-        val slide = surgeProgress()
-        fun lift(row: Int, col: Int): Float =
-            if (surgeLift == null || slide <= 0f) 0f
-            else surgeLift.getOrElse(row * Board.SIZE + col) { 0 } * cell * slide
+        // Where a tile is drawn relative to where it belongs, while it slides home. The shift
+        // is the row it came from less the row it's in, so the sign carries it back there.
+        val slide = shiftProgress()
+        fun travel(row: Int, col: Int): Float =
+            if (shift == null || slide <= 0f) 0f
+            else shift.getOrElse(row * Board.SIZE + col) { 0 } * cell * slide
 
         // Alternating 3x3 box backgrounds, matching the sudoku-style checker in the reference.
         for (box in 0 until Board.SIZE) {
@@ -227,7 +229,7 @@ fun BoardCanvas(
                 val tint = painter.fill(slot)
                 drawTile(
                     left = col * cell,
-                    top = row * cell + lift(row, col),
+                    top = row * cell + travel(row, col),
                     cell = cell,
                     fill = if (progress > 0f) lerp(tint, Color.White, progress) else tint,
                     edge = if (progress > 0f) null else painter.edge(slot),

@@ -36,10 +36,24 @@ object Scoring {
     fun comboMultiplier(streak: Int): Float =
         if (streak <= 1) 1f else min(1f + COMBO_STEP * (streak - 1), MAX_COMBO)
 
-    /** Points for a placement that cleared [clearedUnits] rows/columns/boxes at once. */
-    fun points(cellsPlaced: Int, clearedUnits: Int, streak: Int): Int {
+    /**
+     * What the [link]th clear of one cascade is worth, where 1 is the clear the player made.
+     *
+     * Uncapped and steeper than the combo, on purpose. A combo is a run of ordinary turns and
+     * wants to stay in proportion to them; a chain is one move going off like a firework, and
+     * setting one up deliberately deserves to pay out of all proportion to the piece that lit it.
+     */
+    fun chainMultiplier(link: Int): Int = link.coerceAtLeast(1)
+
+    /**
+     * Points for a placement that cleared [clearedUnits] rows/columns/boxes at once.
+     *
+     * [link] is which clear of a cascade this is; it stays 1 outside Collapse, where a move
+     * only ever clears once.
+     */
+    fun points(cellsPlaced: Int, clearedUnits: Int, streak: Int, link: Int = 1): Int {
         if (clearedUnits <= 0) return cellsPlaced
-        val clear = CLEAR_BASE * clearedUnits * clearedUnits
+        val clear = CLEAR_BASE * clearedUnits * clearedUnits * chainMultiplier(link)
         return cellsPlaced + (clear * comboMultiplier(streak)).roundToInt()
     }
 
@@ -49,7 +63,8 @@ object Scoring {
      * Both halves can fire at once: a piece that takes out a row and a column on the third
      * clearing turn running reads "DOUBLE CLEAR · COMBO ×3".
      */
-    fun label(clearedUnits: Int, streak: Int): String? {
+    fun label(clearedUnits: Int, streak: Int, link: Int = 1): String? {
+        if (link > 1) return "CHAIN ×$link"
         val multi = when {
             clearedUnits >= 5 -> "MEGA CLEAR ×$clearedUnits"
             clearedUnits == 4 -> "QUAD CLEAR"

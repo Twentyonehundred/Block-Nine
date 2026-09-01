@@ -44,6 +44,19 @@ enum class GameMode(
         collection = "tidePlayers",
         shortTitle = "Tide",
     ),
+    COLLAPSE(
+        title = "Collapse",
+        blurb = "Clear a line and everything above it falls into the hole.",
+        rules = "Place pieces anywhere you like, exactly as you would in Classic. The change " +
+            "is what happens after a clear: the board gives way, and every tile above the gap " +
+            "drops onto whatever is left below it.\n\nFalling tiles land in new places, and " +
+            "those can complete lines of their own, which collapse in turn. Each link in a " +
+            "chain is worth more than the one before it, so the board you want isn't the " +
+            "tidiest one — it's the one that's about to come down.",
+        prefsPrefix = "collapse_",
+        collection = "collapsePlayers",
+        shortTitle = "Collapse",
+    ),
     ;
 
     val isChallenge: Boolean get() = this != CLASSIC

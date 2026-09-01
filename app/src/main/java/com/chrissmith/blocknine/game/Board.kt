@@ -46,6 +46,26 @@ data class Surge(val board: Board, val overflowed: Boolean, val lift: IntArray) 
 }
 
 /**
+ * The board after everything on it has fallen into the space beneath it.
+ *
+ * [shift] uses the same convention as [Surge.lift] — the row a tile came from minus the row it
+ * sits in now — so it is negative here, where tiles arrive from above. One signed convention for
+ * both means the canvas can animate a shove and a landslide with the same arithmetic.
+ */
+@Immutable
+data class Collapse(val board: Board, val shift: IntArray) {
+
+    /** True if anything actually moved. A collapse that changes nothing ends a cascade. */
+    val moved: Boolean get() = shift.any { it != 0 }
+
+    // Deep-compared for the same reason as [Surge].
+    override fun equals(other: Any?): Boolean = this === other ||
+        (other is Collapse && board == other.board && shift.contentEquals(other.shift))
+
+    override fun hashCode(): Int = board.hashCode() * 31 + shift.contentHashCode()
+}
+
+/**
  * The 9x9 playing field, subdivided into nine 3x3 boxes.
  *
  * Immutable by design: every mutation returns a fresh instance, so holding one in a
@@ -56,6 +76,14 @@ data class Surge(val board: Board, val overflowed: Boolean, val lift: IntArray) 
 class Board private constructor(private val grid: List<Int>) {
 
     operator fun get(row: Int, col: Int): Int = grid[row * SIZE + col]
+
+    // Compared by contents, not identity. Two boards holding the same tiles are the same board
+    // as far as anything here is concerned, and [Surge] and [Collapse] both lean on that to
+    // mean what their own equals claims to mean.
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is Board && grid == other.grid)
+
+    override fun hashCode(): Int = grid.hashCode()
 
     fun isFilled(row: Int, col: Int): Boolean = get(row, col) != EMPTY
 
@@ -227,6 +255,37 @@ class Board private constructor(private val grid: List<Int>) {
         }
 
         return Surge(Board(next), overflowed, lift)
+    }
+
+    /**
+     * Drops every tile straight down onto whatever is under it.
+     *
+     * Tiles fall one at a time rather than as the shapes they arrived in: a piece stops being a
+     * piece the moment it lands, so a clear that removes the middle of it lets the rest come
+     * apart. Order within a column is kept — a tile can't overtake the one beneath it.
+     *
+     * Nothing is cleared here. The caller settles the fallen board, and if that clears anything
+     * it collapses again, which is the cascade.
+     */
+    fun collapse(): Collapse {
+        val next = MutableList(SIZE * SIZE) { EMPTY }
+        val shift = IntArray(SIZE * SIZE)
+
+        for (col in 0 until SIZE) {
+            // The lowest row in this column still to be landed in, walking up from the floor.
+            var floor = SIZE - 1
+
+            for (row in SIZE - 1 downTo 0) {
+                val value = get(row, col)
+                if (value == EMPTY) continue
+
+                next[floor * SIZE + col] = value
+                shift[floor * SIZE + col] = row - floor
+                floor--
+            }
+        }
+
+        return Collapse(Board(next), shift)
     }
 
     companion object {

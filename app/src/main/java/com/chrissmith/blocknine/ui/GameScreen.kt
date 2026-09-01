@@ -2,6 +2,7 @@ package com.chrissmith.blocknine.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -93,12 +94,13 @@ private const val SNAP_BACK_MS = 200
 private const val DEAL_STAGGER_MS = 45L
 
 /**
- * How long the board takes to settle after a surge.
+ * How long the board takes to settle after it has been moved for you.
  *
- * Long enough to see which columns moved and by how much, short enough that you can't get a
- * piece down during it — the shove should read as a single event, not a window to play in.
+ * Long enough to see which tiles went and how far, short enough that you can't get a piece
+ * down during it — a surge or a landslide should read as one event, not a window to play in.
+ * Shared by both so a Collapse chain keeps a steady beat as it runs.
  */
-private const val SURGE_SLIDE_MS = 260
+private const val BOARD_SLIDE_MS = 260
 
 /** The waterline widget's height, as a fraction of a board cell. */
 private const val TIDE_STRIP_CELLS = 0.62f
@@ -153,6 +155,7 @@ fun GameScreen(
     val colors = LocalBoardColors.current
     val haptics = LocalHapticFeedback.current
     val isTide = vm.mode == GameMode.RISING_TIDE
+    val isCollapse = vm.mode == GameMode.COLLAPSE
 
     var boardOrigin by remember { mutableStateOf(Offset.Zero) }
     var boardCell by remember { mutableFloatStateOf(0f) }
@@ -173,19 +176,26 @@ fun GameScreen(
         if (vm.gameOver) leaderboard.onGameFinished(vm.mode, vm.score)
     }
 
-    // Slides the shoved columns up from where they were, so a surge reads as the board being
-    // pushed rather than the board being replaced.
-    val surgeSlide = remember { Animatable(0f) }
-    LaunchedEffect(vm.surgeMoment) {
-        if (vm.surgeMoment == null) return@LaunchedEffect
-        surgeSlide.snapTo(1f)
-        surgeSlide.animateTo(0f, tween(durationMillis = SURGE_SLIDE_MS, easing = FastOutSlowInEasing))
+    // Runs the tiles back to where they came from and lets them travel in, so the board reads
+    // as having been moved rather than replaced. Serves both the tide's shove and Collapse's
+    // landslide; a landslide falls with gathering speed, a shove decelerates into place.
+    val boardSlide = remember { Animatable(0f) }
+    LaunchedEffect(vm.shiftMoment) {
+        if (vm.shiftMoment == null) return@LaunchedEffect
+        boardSlide.snapTo(1f)
+        boardSlide.animateTo(
+            targetValue = 0f,
+            animationSpec = tween(
+                durationMillis = BOARD_SLIDE_MS,
+                easing = if (isCollapse) FastOutLinearInEasing else FastOutSlowInEasing,
+            ),
+        )
     }
 
-    // One knock as the water lands. Anything it clears buzzes again off the gain below, which
-    // is the right order: you feel the shove, then you feel what it happened to finish.
-    LaunchedEffect(vm.surgeMoment) {
-        if (vm.surgeMoment != null) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    // One knock as the board lands. Anything it clears buzzes again off the gain below, which
+    // is the right order: you feel it move, then you feel what the movement finished.
+    LaunchedEffect(vm.shiftMoment) {
+        if (vm.shiftMoment != null) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     // Every placement gets a tap; a clear gets one extra per unit it took out, so a triple
@@ -312,8 +322,8 @@ fun GameScreen(
                         boardOrigin = it.positionInRoot()
                         boardCell = it.size.width / Board.SIZE.toFloat()
                     },
-                surgeLift = if (isTide) vm.lastLift else null,
-                surgeProgress = { surgeSlide.value },
+                shift = vm.lastShift,
+                shiftProgress = { boardSlide.value },
             )
 
             if (isTide) {
@@ -709,7 +719,7 @@ private fun FloatingGain(
         LaunchedEffect(Unit) { progress.animateTo(1f, tween(durationMillis = 900)) }
 
         // Names the bonus rather than leaving the player to work out why the number jumped.
-        val shout = Scoring.label(gain.clearedUnits, gain.streak)
+        val shout = Scoring.label(gain.clearedUnits, gain.streak, gain.link)
         val boardHeight = boardCell * Board.SIZE
 
         Box(Modifier.fillMaxSize()) {

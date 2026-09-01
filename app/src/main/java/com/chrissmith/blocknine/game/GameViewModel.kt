@@ -14,8 +14,19 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** A transient "+N" award, shown floating over the board. [id] makes repeats re-animate. */
-data class Gain(val id: Long, val points: Int, val clearedUnits: Int, val streak: Int)
+/**
+ * A transient "+N" award, shown floating over the board. [id] makes repeats re-animate.
+ *
+ * [link] is which clear of a Collapse cascade this was, counting the player's own as 1, so the
+ * shout-out can call a chain a chain. It stays 1 everywhere else.
+ */
+data class Gain(
+    val id: Long,
+    val points: Int,
+    val clearedUnits: Int,
+    val streak: Int,
+    val link: Int = 1,
+)
 
 class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : AndroidViewModel(app) {
 
@@ -69,17 +80,26 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
 
     private var gainCounter = 0L
 
+    // ---- Tiles moving on their own ----------------------------------------------------------
+
+    /**
+     * How far each cell of the board travelled in the move being animated: the row it came from
+     * minus the row it is in now, so a tide surge reads positive and a collapse reads negative.
+     *
+     * Per cell rather than per column, because neither the water nor a landslide moves a whole
+     * column by one amount.
+     */
+    var lastShift by mutableStateOf(IntArray(0))
+        private set
+
+    /** Bumped whenever [lastShift] changes. Keys the slide animation and its knock of haptics. */
+    var shiftMoment by mutableStateOf<Long?>(null)
+        private set
+
     // ---- Rising Tide ----------------------------------------------------------------------
 
     /** What each column will be pushed by at the next surge. Decided as soon as the last one lands. */
     var pendingWave by mutableStateOf(IntArray(0))
-        private set
-
-    /**
-     * How far each cell of the board rose in the surge that just fired, so it can animate the
-     * shove. Per cell, not per column: the water only carries what it touches.
-     */
-    var lastLift by mutableStateOf(IntArray(0))
         private set
 
     /** Pieces still to play before the water comes in. */
@@ -89,10 +109,6 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
     /** 0 just after a surge, 1 once the very next piece will bring it in. */
     val tideProgress: Float
         get() = 1f - (piecesUntilSurge - 1).toFloat() / (Tide.PIECES_PER_SURGE - 1)
-
-    /** Bumped on every surge. Keys the shove animation. */
-    var surgeMoment by mutableStateOf<Long?>(null)
-        private set
 
     private var surgeCount = 0
 
@@ -135,6 +151,8 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         gameOver = false
         clearing = emptySet()
         gain = null
+        lastShift = IntArray(0)
+        shiftMoment = null
         save?.write(board, tray, score, streak, bestToBeat)
         if (mode == GameMode.RISING_TIDE) armTide()
     }
@@ -170,16 +188,67 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         award(Scoring.points(piece.size, placement.clearedUnits, streak), placement.clearedUnits, streak)
 
         tray = tray.toMutableList().also { it[index] = null }
-        resolve(placement) { endTurn() }
+        resolve(placement) {
+            // Only a clear can start a landslide. Without one the board is exactly as the
+            // player left it, floating pieces and all, which is the point of free placement.
+            if (placement.clearedUnits > 0) cascade(link = 1) { endTurn() } else endTurn()
+        }
     }
 
     /** Files points against the score and fires the floating "+N", plus the record moment if it falls. */
-    private fun award(points: Int, clearedUnits: Int, streak: Int) {
+    private fun award(points: Int, clearedUnits: Int, streak: Int, link: Int = 1) {
         val wasBehind = !beatenBest
         score += points
         bests.record(score)
-        gain = Gain(gainCounter++, points, clearedUnits, streak)
+        gain = Gain(gainCounter++, points, clearedUnits, streak, link)
         if (wasBehind && beatenBest) newBestMoment = gainCounter++
+    }
+
+    /**
+     * Collapse's landslide: the board gives way into the hole a clear just left, and if the
+     * tiles land somewhere that completes a line, that clears and it all gives way again.
+     *
+     * [link] counts where in the cascade we are, the player's own clear being 1. Each link is
+     * worth more than the last, so the payout for a chain runs away from the piece that started
+     * it. The whole cascade is still one clearing turn as far as the combo streak is concerned:
+     * the streak is a record of turns the player kept alive, and a chain runs itself.
+     *
+     * [then] runs once the board has finally stopped moving, however many links that took.
+     */
+    private fun cascade(link: Int, then: () -> Unit) {
+        if (mode != GameMode.COLLAPSE) {
+            then()
+            return
+        }
+
+        val fall = board.collapse()
+        if (!fall.moved) {
+            then()
+            return
+        }
+
+        board = fall.board
+        lastShift = fall.shift
+        shiftMoment = gainCounter++
+
+        viewModelScope.launch {
+            delay(FALL_MS)
+
+            val settled = board.settle()
+            if (settled.clearedUnits == 0) {
+                then()
+                return@launch
+            }
+
+            val next = link + 1
+            award(
+                points = Scoring.points(0, settled.clearedUnits, streak, next),
+                clearedUnits = settled.clearedUnits,
+                streak = streak,
+                link = next,
+            )
+            resolve(settled) { cascade(next, then) }
+        }
     }
 
     /**
@@ -250,8 +319,8 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
      */
     private fun armTide() {
         surgeCount = 0
-        surgeMoment = null
-        lastLift = IntArray(0)
+        shiftMoment = null
+        lastShift = IntArray(0)
         pendingWave = Tide.wave(0)
         piecesUntilSurge = Tide.PIECES_PER_SURGE
     }
@@ -272,10 +341,10 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         val result = board.surge(pendingWave, Pieces.COLOUR_SLOTS)
 
         surgeCount++
-        lastLift = result.lift
+        lastShift = result.lift
         pendingWave = Tide.wave(surgeCount)
         piecesUntilSurge = Tide.PIECES_PER_SURGE
-        surgeMoment = gainCounter++
+        shiftMoment = gainCounter++
 
         val settled = result.board.settle()
         if (settled.clearedUnits > 0) {
@@ -289,6 +358,9 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
         const val PREFS = "block_nine"
 
         private const val CLEAR_FLASH_MS = 190L
+
+        /** How long the board is left falling before the landing is checked for a new line. */
+        private const val FALL_MS = 260L
 
         /** Builds a view model for one [mode]; pair with a `viewModel(key = mode.name, ...)`. */
         fun factory(mode: GameMode) = viewModelFactory {

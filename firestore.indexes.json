@@ -31,6 +31,22 @@
         { "fieldPath": "monthKey", "order": "ASCENDING" },
         { "fieldPath": "monthBest", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "collapsePlayers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayBest", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "collapsePlayers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthBest", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
