@@ -80,14 +80,7 @@ fun ChallengesScreen(
                     colors = colors,
                     onClick = { onPlay(mode) },
                 )
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = mode.rules,
-                    fontSize = 12.sp,
-                    color = colors.textMuted,
-                    modifier = Modifier.padding(horizontal = 6.dp),
-                )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(12.dp))
             }
         }
     }
