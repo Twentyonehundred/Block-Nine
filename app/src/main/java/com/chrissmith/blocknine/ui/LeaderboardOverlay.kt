@@ -33,11 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chrissmith.blocknine.game.GameMode
 import com.chrissmith.blocknine.game.PersonalBests
 import com.chrissmith.blocknine.leaderboard.BoardState
 import com.chrissmith.blocknine.leaderboard.Entry
@@ -47,14 +49,22 @@ import com.chrissmith.blocknine.leaderboard.Period
 @Composable
 fun LeaderboardOverlay(
     vm: LeaderboardViewModel,
-    bests: PersonalBests,
+    /** Which board to open on. Opening from a game shows that game's mode first. */
+    mode: GameMode,
     colors: BoardColors,
     onDismiss: () -> Unit,
 ) {
     val activity = LocalActivity.current
+    val context = LocalContext.current
+
+    // Every mode's device records, read fresh each time the sheet opens. Read from prefs rather
+    // than taken from the running game so the tabs can show a mode that isn't being played.
+    val bests = remember { GameMode.entries.associateWith { PersonalBests.of(context, it) } }
+    val shown = bests.getValue(vm.mode)
 
     LaunchedEffect(Unit) {
-        bests.refresh()
+        vm.select(mode)
+        bests.values.forEach { it.refresh() }
         vm.refresh()
     }
 
@@ -95,10 +105,27 @@ fun LeaderboardOverlay(
                 )
 
                 Spacer(Modifier.height(16.dp))
-                PersonalBestStrip(bests = bests, colors = colors)
+                // Modes above periods: which game you're looking at is the coarser question, and
+                // the personal bests underneath belong to whichever mode is selected here.
+                Tabs(
+                    options = GameMode.entries,
+                    selected = vm.mode,
+                    label = { it.shortTitle },
+                    colors = colors,
+                    onSelect = vm::select,
+                )
+
+                Spacer(Modifier.height(14.dp))
+                PersonalBestStrip(bests = shown, colors = colors)
 
                 Spacer(Modifier.height(18.dp))
-                PeriodTabs(selected = vm.period, colors = colors, onSelect = vm::select)
+                Tabs(
+                    options = Period.entries,
+                    selected = vm.period,
+                    label = { it.label },
+                    colors = colors,
+                    onSelect = vm::select,
+                )
                 Spacer(Modifier.height(16.dp))
 
                 Box(
@@ -215,11 +242,14 @@ private fun emptyMessage(period: Period) = when (period) {
     Period.ALL -> "No scores yet."
 }
 
+/** A segmented control. Used for both rows of tabs so the two read as one stacked control. */
 @Composable
-private fun PeriodTabs(
-    selected: Period,
+private fun <T> Tabs(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
     colors: BoardColors,
-    onSelect: (Period) -> Unit,
+    onSelect: (T) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -229,19 +259,19 @@ private fun PeriodTabs(
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Period.entries.forEach { period ->
-            val active = period == selected
+        options.forEach { option ->
+            val active = option == selected
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(9.dp))
                     .background(if (active) colors.tile else Color.Transparent)
-                    .clickable { onSelect(period) }
+                    .clickable { onSelect(option) }
                     .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = period.label,
+                    text = label(option),
                     fontSize = 13.sp,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                     color = if (active) Color.White else colors.textMuted,

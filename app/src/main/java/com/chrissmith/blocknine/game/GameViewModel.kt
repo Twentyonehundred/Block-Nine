@@ -79,8 +79,11 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
     var pendingWave by mutableStateOf(IntArray(0))
         private set
 
-    /** The wave that has just fired, so the board can animate the shove it caused. */
-    var lastWave by mutableStateOf(IntArray(0))
+    /**
+     * How far each cell of the board rose in the surge that just fired, so it can animate the
+     * shove. Per cell, not per column: the water only carries what it touches.
+     */
+    var lastLift by mutableStateOf(IntArray(0))
         private set
 
     /** Pieces still to play before the water comes in. */
@@ -254,7 +257,7 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
     private fun armTide() {
         surgeCount = 0
         surgeMoment = null
-        lastWave = IntArray(0)
+        lastLift = IntArray(0)
         pendingWave = Tide.wave(0)
         piecesUntilSurge = Tide.PIECES_PER_SURGE
     }
@@ -267,11 +270,10 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
      * the combo streak though, which stays a record of the player's own consecutive clears.
      */
     private fun surge(then: () -> Unit) {
-        val wave = pendingWave
-        val result = board.surge(wave, Pieces.COLOUR_SLOTS)
+        val result = board.surge(pendingWave, Pieces.COLOUR_SLOTS)
 
         surgeCount++
-        lastWave = wave
+        lastLift = result.lift
         pendingWave = Tide.wave(surgeCount)
         piecesUntilSurge = Tide.PIECES_PER_SURGE
         surgeMoment = gainCounter++

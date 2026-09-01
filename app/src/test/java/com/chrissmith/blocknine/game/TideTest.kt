@@ -107,7 +107,9 @@ class TideTest {
     }
 
     @Test
-    fun `pushing a block off the top is a drowning`() {
+    fun `the water goes under a block that isn't standing on anything`() {
+        // The complaint that prompted the contact rule: a block up in the corner with clear air
+        // beneath it used to ride up with every surge.
         val board = Board.of(
             "#........",
             ".........",
@@ -122,13 +124,14 @@ class TideTest {
 
         val result = board.surge(intArrayOf(1, 2, 1, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
 
-        assertTrue(result.overflowed)
+        assertFalse("a floating block was shoved off the top", result.overflowed)
+        assertTrue("the floating block moved", result.board.isFilled(0, 0))
+        assertTrue("the water didn't come in underneath it", result.board.isFilled(8, 0))
     }
 
     @Test
-    fun `a column with room to spare survives the same push`() {
+    fun `the tide lifts what stands on the floor and leaves the rest`() {
         val board = Board.of(
-            ".........",
             "#........",
             ".........",
             ".........",
@@ -137,12 +140,103 @@ class TideTest {
             ".........",
             ".........",
             ".........",
+            "#........",
         )
 
         val result = board.surge(intArrayOf(1, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
 
         assertFalse(result.overflowed)
-        assertTrue(result.board.isFilled(0, 0))
+        assertTrue("the grounded block should have risen", result.board.isFilled(7, 0))
+        assertTrue("the floating block should have stayed put", result.board.isFilled(0, 0))
+        assertEquals(Pieces.COLOUR_SLOTS, result.board.colorSlotAt(8, 0))
+    }
+
+    @Test
+    fun `contact carries sideways but not diagonally`() {
+        // Column 1 is empty at the floor. Its block only rides up because it is joined edge to
+        // edge to the stack in column 0; the block in column 3 is only touching corners.
+        val board = Board.of(
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            "##.#.....",
+            "#.#......",
+        )
+
+        val result = board.surge(intArrayOf(0, 1, 0, 1, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertFalse(result.overflowed)
+        assertTrue("a sideways-joined block should ride up", result.board.isFilled(6, 1))
+        assertTrue("a diagonally-joined block should not move", result.board.isFilled(7, 3))
+    }
+
+    @Test
+    fun `the rising mass shunts a floating block out of its way`() {
+        // A block can sit out the tide, but it can't be walked through.
+        val board = Board.of(
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            "#........",
+            ".........",
+            "#........",
+        )
+
+        val result = board.surge(intArrayOf(2, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertFalse(result.overflowed)
+        assertTrue("the grounded block should have risen two", result.board.isFilled(6, 0))
+        assertTrue("the floating block should have been shoved along", result.board.isFilled(5, 0))
+        assertTrue("the water should fill both rows behind it", result.board.isFilled(7, 0))
+        assertTrue(result.board.isFilled(8, 0))
+        assertFalse("nothing should have gone higher than that", result.board.isFilled(4, 0))
+    }
+
+    @Test
+    fun `pushing a standing stack off the top is a drowning`() {
+        val board = Board.of(
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+            "#........",
+        )
+
+        val result = board.surge(intArrayOf(1, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertTrue(result.overflowed)
+    }
+
+    @Test
+    fun `the lift says exactly which cells moved`() {
+        val board = Board.of(
+            "#........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            ".........",
+            "#........",
+        )
+
+        val result = board.surge(intArrayOf(1, 0, 0, 0, 0, 0, 0, 0, 0), Pieces.COLOUR_SLOTS)
+
+        assertEquals("the floating block didn't move", 0, result.liftAt(0, 0))
+        assertEquals("the grounded block rose one", 1, result.liftAt(7, 0))
+        assertEquals("the water slid in from below", 1, result.liftAt(8, 0))
     }
 
     @Test

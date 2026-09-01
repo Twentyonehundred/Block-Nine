@@ -1,5 +1,6 @@
 package com.chrissmith.blocknine.game
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -79,12 +80,24 @@ class PersonalBests(private val prefs: SharedPreferences, prefix: String = "") {
         edit.apply()
     }
 
-    private companion object {
+    companion object {
+
+        /**
+         * The records for [mode], read straight out of prefs.
+         *
+         * For screens that want a mode's numbers without owning its game — the challenge list
+         * and the leaderboard's mode tabs both need a best they aren't currently playing.
+         */
+        fun of(context: Context, mode: GameMode): PersonalBests = PersonalBests(
+            context.getSharedPreferences(GameViewModel.PREFS, Context.MODE_PRIVATE),
+            mode.prefsPrefix,
+        )
+
         // Keeps the original key so existing installs don't lose their all-time best.
-        const val KEY_ALL = "best_score"
-        const val KEY_DAY = "best_day"
-        const val KEY_DAY_KEY = "best_day_key"
-        const val KEY_MONTH = "best_month"
-        const val KEY_MONTH_KEY = "best_month_key"
+        private const val KEY_ALL = "best_score"
+        private const val KEY_DAY = "best_day"
+        private const val KEY_DAY_KEY = "best_day_key"
+        private const val KEY_MONTH = "best_month"
+        private const val KEY_MONTH_KEY = "best_month_key"
     }
 }

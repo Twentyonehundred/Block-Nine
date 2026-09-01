@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.chrissmith.blocknine.game.GameMode
 import kotlinx.coroutines.launch
 
 /** What the leaderboard sheet is currently showing for one board. */
@@ -29,6 +30,10 @@ class LeaderboardViewModel(app: Application) : AndroidViewModel(app) {
     var player by mutableStateOf(repo.currentPlayer())
         private set
 
+    /** Which mode's board is showing. Opening the sheet from a game preselects that game's mode. */
+    var mode by mutableStateOf(GameMode.CLASSIC)
+        private set
+
     var period by mutableStateOf(Period.DAY)
         private set
 
@@ -42,12 +47,18 @@ class LeaderboardViewModel(app: Application) : AndroidViewModel(app) {
     var error by mutableStateOf<String?>(null)
         private set
 
-    /** The score of the last finished game, pending submission until the player signs in. */
-    private var unsubmitted: Int = 0
+    /** Best finished score per mode still waiting on a sign-in before it can be submitted. */
+    private val unsubmitted = mutableMapOf<GameMode, Int>()
 
     fun select(next: Period) {
         if (next == period) return
         period = next
+        refresh()
+    }
+
+    fun select(next: GameMode) {
+        if (next == mode) return
+        mode = next
         refresh()
     }
 
@@ -58,9 +69,10 @@ class LeaderboardViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val target = period
+        val targetMode = mode
         board = BoardState.Loading
         viewModelScope.launch {
-            board = runCatching { repo.top(target) }.fold(
+            board = runCatching { repo.top(targetMode, target) }.fold(
                 onSuccess = { BoardState.Loaded(it) },
                 // Almost always a missing composite index or closed rules; both are setup
                 // problems, so surface the real message rather than a generic failure.
@@ -73,15 +85,19 @@ class LeaderboardViewModel(app: Application) : AndroidViewModel(app) {
      * Called when a game ends. Submits immediately if signed in, otherwise remembers the score
      * so it still counts if the player signs in from the game-over screen.
      */
-    fun onGameFinished(score: Int) {
+    fun onGameFinished(mode: GameMode, score: Int) {
         if (!configured || score <= 0) return
         if (player == null) {
-            unsubmitted = maxOf(unsubmitted, score)
+            unsubmitted[mode] = maxOf(unsubmitted[mode] ?: 0, score)
             return
         }
         viewModelScope.launch {
-            runCatching { repo.submit(score) }
-            if (period == Period.DAY || period == Period.ALL) refresh()
+            runCatching { repo.submit(mode, score) }
+            if (mode == this@LeaderboardViewModel.mode &&
+                (period == Period.DAY || period == Period.ALL)
+            ) {
+                refresh()
+            }
         }
     }
 
@@ -93,10 +109,12 @@ class LeaderboardViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { repo.signIn(activityContext) }
                 .onSuccess { signedIn ->
                     player = signedIn
-                    if (unsubmitted > 0) {
-                        runCatching { repo.submit(unsubmitted) }
-                        unsubmitted = 0
+                    // Everything played before signing in still counts, on whichever board it
+                    // belongs to.
+                    unsubmitted.forEach { (playedMode, score) ->
+                        runCatching { repo.submit(playedMode, score) }
                     }
+                    unsubmitted.clear()
                     refresh()
                 }
                 .onFailure { cause ->

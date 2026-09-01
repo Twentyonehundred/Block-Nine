@@ -12,6 +12,7 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.chrissmith.blocknine.game.GameMode
 import kotlinx.coroutines.tasks.await
 
 /** One row on a board. */
@@ -27,11 +28,15 @@ data class Player(val uid: String, val name: String, val photoUrl: String?)
 /**
  * Google sign-in plus the leaderboard documents.
  *
- * Every player owns exactly one document at `players/{uid}` holding their all-time best
- * alongside a best-for-today and best-for-this-month, each paired with the bucket key it
- * belongs to. Keeping all three on one document means a score submission is a single write,
- * and each board is one indexed query — the dated boards filter on their key first so last
- * month's numbers can't leak into this month's ranking.
+ * Every player owns exactly one document per mode, at `{mode.collection}/{uid}`, holding their
+ * all-time best alongside a best-for-today and best-for-this-month, each paired with the bucket
+ * key it belongs to. Keeping all three on one document means a score submission is a single
+ * write, and each board is one indexed query — the dated boards filter on their key first so
+ * last month's numbers can't leak into this month's ranking.
+ *
+ * Modes get their own collection rather than their own fields on a shared document so every
+ * board is the same shape: one set of rules and one pair of indexes, written once and reused,
+ * and a new mode costs a collection name rather than a schema change.
  */
 class LeaderboardRepository(private val context: Context) {
 
@@ -44,7 +49,8 @@ class LeaderboardRepository(private val context: Context) {
 
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
     private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
-    private val players get() = db.collection(COLLECTION)
+
+    private fun boardOf(mode: GameMode) = db.collection(mode.collection)
 
     fun currentPlayer(): Player? = if (!configured) null else auth.currentUser?.toPlayer()
 
@@ -90,17 +96,17 @@ class LeaderboardRepository(private val context: Context) {
     }
 
     /**
-     * Records [score] against the signed-in player, raising each of the three bests only if
-     * this game beat it. Run in a transaction because the day and month bests need the stored
-     * bucket key to decide between "beat it" and "new period, start again".
+     * Records [score] against the signed-in player on [mode]'s board, raising each of the three
+     * bests only if this game beat it. Run in a transaction because the day and month bests need
+     * the stored bucket key to decide between "beat it" and "new period, start again".
      */
-    suspend fun submit(score: Int) {
+    suspend fun submit(mode: GameMode, score: Int) {
         if (!configured || score <= 0) return
         val player = currentPlayer() ?: return
 
         val today = Periods.dayKey()
         val thisMonth = Periods.monthKey()
-        val doc = players.document(player.uid)
+        val doc = boardOf(mode).document(player.uid)
 
         db.runTransaction { txn ->
             val snapshot = txn.get(doc)
@@ -128,19 +134,20 @@ class LeaderboardRepository(private val context: Context) {
         }.await()
     }
 
-    /** Top [limit] players on [period], best first. */
-    suspend fun top(period: Period, limit: Long = TOP_N): List<Entry> {
+    /** Top [limit] players on [mode]'s [period] board, best first. */
+    suspend fun top(mode: GameMode, period: Period, limit: Long = TOP_N): List<Entry> {
         if (!configured) return emptyList()
 
+        val board = boardOf(mode)
         val scoreField = when (period) {
             Period.DAY -> FIELD_DAY_BEST
             Period.MONTH -> FIELD_MONTH_BEST
             Period.ALL -> FIELD_BEST
         }
         val query: Query = when (period) {
-            Period.DAY -> players.whereEqualTo(FIELD_DAY_KEY, Periods.dayKey())
-            Period.MONTH -> players.whereEqualTo(FIELD_MONTH_KEY, Periods.monthKey())
-            Period.ALL -> players
+            Period.DAY -> board.whereEqualTo(FIELD_DAY_KEY, Periods.dayKey())
+            Period.MONTH -> board.whereEqualTo(FIELD_MONTH_KEY, Periods.monthKey())
+            Period.ALL -> board
         }
 
         return query
@@ -161,7 +168,6 @@ class LeaderboardRepository(private val context: Context) {
     }
 
     private companion object {
-        const val COLLECTION = "players"
         const val TOP_N = 25L
         const val FIELD_BEST = "best"
         const val FIELD_DAY_KEY = "dayKey"

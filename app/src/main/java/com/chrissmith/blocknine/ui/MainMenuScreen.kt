@@ -132,7 +132,7 @@ fun MainMenuScreen(
     if (showLeaderboard) {
         LeaderboardOverlay(
             vm = leaderboard,
-            bests = bests,
+            mode = GameMode.CLASSIC,
             colors = colors,
             onDismiss = { showLeaderboard = false },
         )

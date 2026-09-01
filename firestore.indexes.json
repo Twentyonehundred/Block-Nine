@@ -15,6 +15,22 @@
         { "fieldPath": "monthKey", "order": "ASCENDING" },
         { "fieldPath": "monthBest", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "tidePlayers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayBest", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tidePlayers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthBest", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

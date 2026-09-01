@@ -22,7 +22,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chrissmith.blocknine.game.GameMode
-import com.chrissmith.blocknine.game.GameViewModel
 import com.chrissmith.blocknine.game.PersonalBests
 
 /**
@@ -94,7 +93,5 @@ fun ChallengesScreen(
     }
 }
 
-private fun bestFor(context: Context, mode: GameMode): Int {
-    val prefs = context.getSharedPreferences(GameViewModel.PREFS, Context.MODE_PRIVATE)
-    return PersonalBests(prefs, mode.prefsPrefix).allTime
-}
+private fun bestFor(context: Context, mode: GameMode): Int =
+    PersonalBests.of(context, mode).allTime

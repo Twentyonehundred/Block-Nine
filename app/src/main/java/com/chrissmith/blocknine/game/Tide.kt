@@ -30,19 +30,32 @@ object Tide {
     /**
      * The push profiles, in the order a run works through them.
      *
-     * Every profile has at least two distinct values, because a run of equal numbers is the
-     * flat push this mode exists to avoid. They widen rather than steepen for most of the run,
-     * so the board deforms in more places before it starts deforming more violently.
+     * A profile is only ever a few columns wide, never all nine, because a push spread evenly
+     * across the board is the flat lift this mode exists to avoid. They widen rather than
+     * steepen for most of the run, so the board deforms in more places before it starts
+     * deforming more violently.
+     *
+     * The early ones are deliberately tiny. Three pieces add around a dozen cells on their own,
+     * so a surge that arrives with them only has to bend the board to be felt — making it also
+     * cost half a row from the first move on is what turned the mode into an unwinnable race.
      */
     private val PROFILES = listOf(
+        intArrayOf(1),
+        intArrayOf(1, 1),
+        intArrayOf(1, 2),
         intArrayOf(1, 2, 1),
+        intArrayOf(2, 1, 2),
         intArrayOf(1, 2, 2, 1),
-        intArrayOf(1, 2, 2, 2, 1),
         intArrayOf(1, 2, 3, 2, 1),
     )
 
-    /** Surges at one profile before the next one takes over. */
-    private const val SURGES_PER_LEVEL = 3
+    /**
+     * Surges at one profile before the next one takes over.
+     *
+     * Four surges is a dozen pieces, so the worst profile arrives around the seventieth move —
+     * far enough in that reaching it is already a good run.
+     */
+    private const val SURGES_PER_LEVEL = 4
 
     /** The most rows any single column can be shoved, used to scale the warning bar. */
     val MAX_PUSH: Int = PROFILES.maxOf { profile -> profile.max() }

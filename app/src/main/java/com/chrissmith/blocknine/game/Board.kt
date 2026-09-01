@@ -22,9 +22,24 @@ data class Placement(
  * The board after a tide surge.
  *
  * [overflowed] means a filled cell was shoved off the top edge, which ends a Rising Tide run.
+ * [lift] says, for every cell of the new board, how many rows it travelled to get there, so the
+ * animation can slide exactly what moved and leave everything else alone.
  */
 @Immutable
-data class Surge(val board: Board, val overflowed: Boolean)
+data class Surge(val board: Board, val overflowed: Boolean, val lift: IntArray) {
+
+    /** Rows the cell now at ([row], [col]) rose by, 0 if it was already there. */
+    fun liftAt(row: Int, col: Int): Int = lift[row * Board.SIZE + col]
+
+    // IntArray is identity-compared by default, which would make two equal surges unequal and
+    // quietly defeat Compose's skipping. Deep-compare it instead.
+    override fun equals(other: Any?): Boolean = this === other ||
+        (other is Surge && board == other.board && overflowed == other.overflowed &&
+            lift.contentEquals(other.lift))
+
+    override fun hashCode(): Int =
+        (board.hashCode() * 31 + overflowed.hashCode()) * 31 + lift.contentHashCode()
+}
 
 /**
  * The 9x9 playing field, subdivided into nine 3x3 boxes.
@@ -149,33 +164,97 @@ class Board private constructor(private val grid: List<Int>) {
     }
 
     /**
-     * Shoves each column up by its entry in [pushes], filling the cells vacated at the bottom
-     * with blocks in colour slot [fillSlot].
+     * Every filled cell joined edge to edge, through other filled cells, to something standing
+     * on the floor. Diagonal touches don't count.
      *
-     * Columns move by different amounts on purpose — see [Tide]. Nothing is cleared here; the
-     * caller decides whether a surge that completes a line should pay out, and [settle] does
-     * the actual clearing.
+     * This is what the tide can get hold of. Water rising up a column shoves the mass that
+     * reaches the bottom of the board; anything hanging in the air above a gap is not part of
+     * that mass and the water goes straight past underneath it.
+     */
+    private fun grounded(): BooleanArray {
+        val grounded = BooleanArray(SIZE * SIZE)
+        val pending = ArrayDeque<Int>()
+
+        for (col in 0 until SIZE) {
+            val index = (SIZE - 1) * SIZE + col
+            if (grid[index] != EMPTY) {
+                grounded[index] = true
+                pending.addLast(index)
+            }
+        }
+
+        while (pending.isNotEmpty()) {
+            val index = pending.removeLast()
+            val row = index / SIZE
+            val col = index % SIZE
+            for ((r, c) in NEIGHBOURS) {
+                val nr = row + r
+                val nc = col + c
+                if (nr !in 0 until SIZE || nc !in 0 until SIZE) continue
+                val neighbour = nr * SIZE + nc
+                if (grounded[neighbour] || grid[neighbour] == EMPTY) continue
+                grounded[neighbour] = true
+                pending.addLast(neighbour)
+            }
+        }
+
+        return grounded
+    }
+
+    /**
+     * Lets the water in, [pushes] rows deep per column, as blocks in colour slot [fillSlot].
+     *
+     * The water only carries what it is actually touching. A cell rides up its column's push if
+     * it belongs to the mass standing on the floor (see [grounded]) — which reaches sideways as
+     * well as straight down, so a block hanging off the side of a stack goes up with it. A block
+     * with nothing but air beneath it stays exactly where it is and the water fills in below.
+     *
+     * Columns still move by different amounts on purpose, so a run spanning an uneven wave
+     * shears rather than lifting flat — see [Tide]. What a floating block can't do is dodge:
+     * anything the rising mass would land on gets shunted along ahead of it.
+     *
+     * Nothing is cleared here; the caller decides whether a surge that completes a line should
+     * pay out, and [settle] does the actual clearing.
      */
     fun surge(pushes: IntArray, fillSlot: Int): Surge {
         require(pushes.size == SIZE) { "expected $SIZE pushes, got ${pushes.size}" }
 
+        val grounded = grounded()
         val next = MutableList(SIZE * SIZE) { EMPTY }
+        val lift = IntArray(SIZE * SIZE)
         var overflowed = false
 
         for (col in 0 until SIZE) {
             val push = pushes[col].coerceIn(0, SIZE)
-            for (row in 0 until SIZE) {
+
+            // The lowest row still free above everything already placed in this column. Starts
+            // just above the water, and walks up as the column is rebuilt from the bottom.
+            var free = SIZE - 1 - push
+
+            for (row in SIZE - 1 downTo 0) {
                 val value = get(row, col)
                 if (value == EMPTY) continue
-                val to = row - push
-                if (to < 0) overflowed = true else next[to * SIZE + col] = value
+
+                val wanted = if (grounded[row * SIZE + col]) row - push else row
+                val to = minOf(wanted, free)
+                free = to - 1
+
+                if (to < 0) {
+                    overflowed = true
+                } else {
+                    next[to * SIZE + col] = value
+                    lift[to * SIZE + col] = row - to
+                }
             }
+
+            // The water itself, which slid up from off the bottom edge.
             for (row in SIZE - push until SIZE) {
                 next[row * SIZE + col] = fillSlot + 1
+                lift[row * SIZE + col] = push
             }
         }
 
-        return Surge(Board(next), overflowed)
+        return Surge(Board(next), overflowed, lift)
     }
 
     companion object {
@@ -185,6 +264,9 @@ class Board private constructor(private val grid: List<Int>) {
         const val FILLED = 1
 
         private const val EMPTY_CHAR = '.'
+
+        /** The four cells that count as touching. Diagonals are deliberately absent. */
+        private val NEIGHBOURS = listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
 
         fun empty(): Board = Board(List(SIZE * SIZE) { EMPTY })
 

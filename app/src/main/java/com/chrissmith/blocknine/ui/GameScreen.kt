@@ -164,9 +164,9 @@ fun GameScreen(
     BackHandler(onBack = onExit)
 
     // A finished game is the only thing worth ranking, so submit exactly once per game over.
-    // Challenge modes are played under different rules and stay off the shared board.
+    // Every mode has its own board, so every mode submits — to its own.
     LaunchedEffect(vm.gameOver) {
-        if (vm.gameOver && vm.mode == GameMode.CLASSIC) leaderboard.onGameFinished(vm.score)
+        if (vm.gameOver) leaderboard.onGameFinished(vm.mode, vm.score)
     }
 
     // Slides the shoved columns up from where they were, so a surge reads as the board being
@@ -197,7 +197,7 @@ fun GameScreen(
     // Abandoning a game part-way still counts — otherwise a good run thrown away by tapping
     // NEW would silently never reach the board.
     fun startNewGame() {
-        if (!vm.gameOver && vm.mode == GameMode.CLASSIC) leaderboard.onGameFinished(vm.score)
+        if (!vm.gameOver) leaderboard.onGameFinished(vm.mode, vm.score)
         vm.newGame()
     }
 
@@ -308,7 +308,7 @@ fun GameScreen(
                         boardOrigin = it.positionInRoot()
                         boardCell = it.size.width / Board.SIZE.toFloat()
                     },
-                surgeWave = if (isTide) vm.lastWave else null,
+                surgeLift = if (isTide) vm.lastLift else null,
                 surgeProgress = { surgeSlide.value },
             )
 
@@ -408,13 +408,7 @@ fun GameScreen(
                 best = vm.bestToBeat,
                 colors = colors,
                 onPlayAgain = vm::newGame,
-                // A challenge score never reached the shared board, so there's nothing of
-                // this game to go and look at.
-                onLeaderboard = if (vm.mode == GameMode.CLASSIC) {
-                    { showLeaderboard = true }
-                } else {
-                    null
-                },
+                onLeaderboard = { showLeaderboard = true },
                 onExit = onExit,
             )
         }
@@ -422,7 +416,6 @@ fun GameScreen(
         if (confirmNewGame) {
             ConfirmNewGameOverlay(
                 score = vm.score,
-                submits = vm.mode == GameMode.CLASSIC,
                 colors = colors,
                 onConfirm = {
                     confirmNewGame = false
@@ -435,7 +428,7 @@ fun GameScreen(
         if (showLeaderboard) {
             LeaderboardOverlay(
                 vm = leaderboard,
-                bests = vm.bests,
+                mode = vm.mode,
                 colors = colors,
                 onDismiss = { showLeaderboard = false },
             )
@@ -795,8 +788,6 @@ private fun NewBestBanner(
 @Composable
 private fun ConfirmNewGameOverlay(
     score: Int,
-    /** Whether this mode's scores reach the online board, which changes what's at stake. */
-    submits: Boolean,
     colors: BoardColors,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
@@ -832,11 +823,8 @@ private fun ConfirmNewGameOverlay(
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = if (submits) {
-                        "This game ends now. Your score of $score still counts on the leaderboard."
-                    } else {
-                        "This game ends now. Your score of $score still counts towards your record."
-                    },
+                    text = "This game ends now. Your score of $score still counts on the " +
+                        "leaderboard.",
                     fontSize = 13.sp,
                     color = colors.textMuted,
                     textAlign = TextAlign.Center,
@@ -867,8 +855,7 @@ private fun GameOverOverlay(
     best: Int,
     colors: BoardColors,
     onPlayAgain: () -> Unit,
-    /** Null in modes that don't submit, which hides the link rather than offering a dead end. */
-    onLeaderboard: (() -> Unit)?,
+    onLeaderboard: () -> Unit,
     onExit: () -> Unit,
 ) {
     Box(
@@ -925,10 +912,8 @@ private fun GameOverOverlay(
                 ) {
                     Text("Play again", fontWeight = FontWeight.SemiBold)
                 }
-                if (onLeaderboard != null) {
-                    TextButton(onClick = onLeaderboard) {
-                        Text("Leaderboard", fontSize = 13.sp, color = colors.textMuted)
-                    }
+                TextButton(onClick = onLeaderboard) {
+                    Text("Leaderboard", fontSize = 13.sp, color = colors.textMuted)
                 }
                 TextButton(onClick = onExit) {
                     Text("Menu", fontSize = 13.sp, color = colors.textMuted)

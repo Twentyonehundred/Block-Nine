@@ -126,8 +126,12 @@ fun BoardCanvas(
     completing: Set<Int>,
     colors: BoardColors,
     modifier: Modifier = Modifier,
-    /** Per-column push of the surge being animated, or null when nothing is sliding. */
-    surgeWave: IntArray? = null,
+    /**
+     * How far each cell of [board] rose in the surge being animated, or null when nothing is
+     * sliding. Per cell rather than per column because the tide only moves what it touches, so
+     * a pushed column can hold blocks that didn't budge.
+     */
+    surgeLift: IntArray? = null,
     /**
      * How much of that slide is left, 1 down to 0. Read in the draw scope rather than taken as
      * a value so the animation repaints without recomposing the whole screen behind it.
@@ -155,11 +159,11 @@ fun BoardCanvas(
         val hairline = (cell * 0.02f).coerceAtLeast(1f)
         val boxLine = (cell * 0.045f).coerceAtLeast(2f)
 
-        // Where a column is drawn relative to where it belongs, while a surge slides home.
+        // Where a tile is drawn relative to where it belongs, while a surge slides home.
         val slide = surgeProgress()
-        fun lift(col: Int): Float =
-            if (surgeWave == null || slide <= 0f) 0f
-            else (surgeWave.getOrElse(col) { 0 }) * cell * slide
+        fun lift(row: Int, col: Int): Float =
+            if (surgeLift == null || slide <= 0f) 0f
+            else surgeLift.getOrElse(row * Board.SIZE + col) { 0 } * cell * slide
 
         // Alternating 3x3 box backgrounds, matching the sudoku-style checker in the reference.
         for (box in 0 until Board.SIZE) {
@@ -223,7 +227,7 @@ fun BoardCanvas(
                 val tint = painter.fill(slot)
                 drawTile(
                     left = col * cell,
-                    top = row * cell + lift(col),
+                    top = row * cell + lift(row, col),
                     cell = cell,
                     fill = if (progress > 0f) lerp(tint, Color.White, progress) else tint,
                     edge = if (progress > 0f) null else painter.edge(slot),
