@@ -21,6 +21,12 @@ if [ -z "$DEVICE" ]; then
     exit 1
 fi
 
-./gradlew --quiet assembleDebug
+# Android refuses an install that goes backwards, so build one past whatever is on the phone
+# rather than the default of 1. Nothing is installed yet on a fresh device, hence the fallback.
+INSTALLED="$("$ADB" -s "$DEVICE" shell dumpsys package com.chrissmith.blocknine 2>/dev/null |
+    sed -n 's/.*versionCode=\([0-9]*\).*/\1/p' | head -1)"
+VERSION_CODE=$(( ${INSTALLED:-0} + 1 ))
+
+VERSION_CODE=$VERSION_CODE ./gradlew --quiet assembleDebug
 "$ADB" -s "$DEVICE" install -r app/build/outputs/apk/debug/app-debug.apk
-echo "Installed to $DEVICE"
+echo "Installed 1.0.$VERSION_CODE to $DEVICE"
