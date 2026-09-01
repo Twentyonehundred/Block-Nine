@@ -189,9 +189,10 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
 
         tray = tray.toMutableList().also { it[index] = null }
         resolve(placement) {
-            // Only a clear can start a landslide. Without one the board is exactly as the
-            // player left it, floating pieces and all, which is the point of free placement.
-            if (placement.clearedUnits > 0) cascade(link = 1) { endTurn() } else endTurn()
+            // Only a clear can start a landslide, and only over the hole it left. Without one
+            // the board is exactly as the player left it, floating pieces and all, which is
+            // the whole point of being able to place anywhere.
+            cascade(link = 1, cleared = placement.clearedCells) { endTurn() }
         }
     }
 
@@ -213,15 +214,16 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
      * it. The whole cascade is still one clearing turn as far as the combo streak is concerned:
      * the streak is a record of turns the player kept alive, and a chain runs itself.
      *
+     * [cleared] is the hole to close — the cells the clear that started this link took out.
      * [then] runs once the board has finally stopped moving, however many links that took.
      */
-    private fun cascade(link: Int, then: () -> Unit) {
-        if (mode != GameMode.COLLAPSE) {
+    private fun cascade(link: Int, cleared: Set<Int>, then: () -> Unit) {
+        if (mode != GameMode.COLLAPSE || cleared.isEmpty()) {
             then()
             return
         }
 
-        val fall = board.collapse()
+        val fall = board.collapseInto(cleared)
         if (!fall.moved) {
             then()
             return
@@ -247,7 +249,7 @@ class GameViewModel(app: Application, val mode: GameMode = GameMode.CLASSIC) : A
                 streak = streak,
                 link = next,
             )
-            resolve(settled) { cascade(next, then) }
+            resolve(settled) { cascade(next, settled.clearedCells, then) }
         }
     }
 

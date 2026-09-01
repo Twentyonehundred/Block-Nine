@@ -47,12 +47,14 @@ enum class GameMode(
     COLLAPSE(
         title = "Collapse",
         blurb = "Clear a line and everything above it falls into the hole.",
-        rules = "Place pieces anywhere you like, exactly as you would in Classic. The change " +
-            "is what happens after a clear: the board gives way, and every tile above the gap " +
-            "drops onto whatever is left below it.\n\nFalling tiles land in new places, and " +
-            "those can complete lines of their own, which collapse in turn. Each link in a " +
-            "chain is worth more than the one before it, so the board you want isn't the " +
-            "tidiest one — it's the one that's about to come down.",
+        rules = "Place pieces anywhere you like, exactly as you would in Classic — floating in " +
+            "mid-air if you want. The change is what happens after a clear: the tiles standing " +
+            "over the hole fall into it. Clear a row and everything above it comes down one. " +
+            "Clear a 3x3 box and those three columns drop three, while the rest of the board " +
+            "stays exactly where you put it.\n\nTiles that land somewhere new can complete " +
+            "lines you never placed for, and those collapse in turn. Each link in a chain is " +
+            "worth more than the one before it, so the board you want isn't the tidiest one — " +
+            "it's the one that's about to come down.",
         prefsPrefix = "collapse_",
         collection = "collapsePlayers",
         shortTitle = "Collapse",

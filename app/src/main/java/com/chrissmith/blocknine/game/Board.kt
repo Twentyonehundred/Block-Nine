@@ -46,7 +46,7 @@ data class Surge(val board: Board, val overflowed: Boolean, val lift: IntArray) 
 }
 
 /**
- * The board after everything on it has fallen into the space beneath it.
+ * The board after the tiles over a cleared hole have dropped into it.
  *
  * [shift] uses the same convention as [Surge.lift] — the row a tile came from minus the row it
  * sits in now — so it is negative here, where tiles arrive from above. One signed convention for
@@ -258,30 +258,46 @@ class Board private constructor(private val grid: List<Int>) {
     }
 
     /**
-     * Drops every tile straight down onto whatever is under it.
+     * Closes the holes [cleared] just left, by dropping whatever was standing over them.
      *
-     * Tiles fall one at a time rather than as the shapes they arrived in: a piece stops being a
-     * piece the moment it lands, so a clear that removes the middle of it lets the rest come
-     * apart. Order within a column is kept — a tile can't overtake the one beneath it.
+     * A tile falls by exactly the number of cleared cells beneath it in its own column, and not
+     * one row further. That keeps the collapse local and readable: clear a row and everything
+     * above it comes down one; clear a 3x3 box and only those three columns move, by three;
+     * clear a column and nothing moves at all, because the column went with it.
      *
-     * Nothing is cleared here. The caller settles the fallen board, and if that clears anything
-     * it collapses again, which is the cascade.
+     * Gaps the clear didn't make are left alone. Tiles you chose to float stay floating — free
+     * placement is the game, and a clear on the far side of the board has no business undoing
+     * something you built on purpose. Because the drop only ever closes fresh holes, tiles keep
+     * their order and can't land on one another.
+     *
+     * They fall one at a time rather than as the shapes they arrived in, though: a piece stops
+     * being a piece the moment it lands, so a clear through the middle of one takes it apart.
+     *
+     * [cleared] holds flat indices, as [Placement.clearedCells] does, and this expects the board
+     * those cells have already been emptied from. Nothing is cleared here — the caller settles
+     * the fallen board, and if that completes anything it collapses again, which is the cascade.
      */
-    fun collapse(): Collapse {
+    fun collapseInto(cleared: Set<Int>): Collapse {
         val next = MutableList(SIZE * SIZE) { EMPTY }
         val shift = IntArray(SIZE * SIZE)
 
         for (col in 0 until SIZE) {
-            // The lowest row in this column still to be landed in, walking up from the floor.
-            var floor = SIZE - 1
+            // Fresh holes passed on the way up, which is how far anything above them drops.
+            var holes = 0
 
             for (row in SIZE - 1 downTo 0) {
+                val index = row * SIZE + col
+                if (index in cleared) {
+                    holes++
+                    continue
+                }
+
                 val value = get(row, col)
                 if (value == EMPTY) continue
 
-                next[floor * SIZE + col] = value
-                shift[floor * SIZE + col] = row - floor
-                floor--
+                val to = row + holes
+                next[to * SIZE + col] = value
+                shift[to * SIZE + col] = row - to
             }
         }
 
